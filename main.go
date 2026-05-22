@@ -13,10 +13,11 @@ func main() {
      \   Y   / |  \____ \_/ __ \_  __ \ |    __)/  _ \_  __ \/ ___\_/ __ \ 
       \     /  |  |  |_> >  ___/|  | \/ |     \(  <_> )  | \/ /_/  >  ___/ 
        \___/   |__|   __/ \___  >__|    \___  / \____/|__|  \___  / \___  >
-                  |__|        \/            \/             /_____/      \/	v1.0.0-beta
+                  |__|        \/            \/             /_____/      \/	v1.1.0-beta
                                 Red Team Exploit Factory
 	`)
 
+	core.PostGenerateHook = InjectDependencyCheck
 	session := core.NewSession()
 	console.StartShell(session)
 }

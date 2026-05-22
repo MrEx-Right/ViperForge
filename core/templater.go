@@ -8,6 +8,8 @@ import (
 	"text/template"
 )
 
+var PostGenerateHook func(string)
+
 func GenerateExploit(session *Session) error {
 	templatePath := filepath.Join("templates", "exploits", session.ActiveExploit+".tmpl")
 	
@@ -45,5 +47,10 @@ func GenerateExploit(session *Session) error {
 	}
 
 	fmt.Printf("[+] Exploit successfully generated: %s\n", outName)
+	
+	if PostGenerateHook != nil {
+		PostGenerateHook(outName)
+	}
+	
 	return nil
 }

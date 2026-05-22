@@ -4,7 +4,7 @@
      \   Y   / |  \____ \_/ __ \_  __ \ |    __)/  _ \_  __ \/ ___\_/ __ \ 
       \     /  |  |  |_> >  ___/|  | \/ |     \(  <_> )  | \/ /_/  >  ___/ 
        \___/   |__|   __/ \___  >__|    \___  / \____/|__|  \___  / \___  >
-                  |__|        \/            \/             /_____/      \/ v1.0.0-beta
+                  |__|        \/            \/             /_____/      \/ v1.1.0-beta
                                 Red Team Exploit Factory
 ```
 
@@ -14,7 +14,7 @@
 ![Shell](https://img.shields.io/badge/Launcher-Bash-4EAA25?style=for-the-badge&logo=gnubash&logoColor=white)
 ![License](https://img.shields.io/badge/License-GPLv3-blue?style=for-the-badge)
 ![Status](https://img.shields.io/badge/Status-Beta-orange?style=for-the-badge)
-![Version](https://img.shields.io/badge/Version-1.0.0--beta-red?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-1.1.0--beta-red?style=for-the-badge)
 
 **Wizard-driven, modular Red Team exploit factory built in Go.**  
 *Inspired by Metasploit's interactive console — built for pwn scripts and payload generation.*

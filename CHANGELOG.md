@@ -12,6 +12,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [1.1.0-beta] — 2026-05-23
+
+### Added
+- **Automatic Pre-Flight Dependency Checking:** Generated Python exploit scripts now include a built-in pre-flight check logic that automatically verifies the existence of required modules (`pwntools`, `requests`, `impacket`) via the `dependency_controller`. Missing dependencies gracefully abort the exploit execution with a user-friendly error message, ensuring the target environment is ready before attempting execution.
+- Added `PostGenerateHook` in `core/templater.go` to intercept and dynamically modify exploit scripts right after generation without altering template files directly.
+
+---
+
 ## [1.0.0-beta] — 2026-05-09
 
 > 🐍 **Initial public beta release of ViperForge.**  
