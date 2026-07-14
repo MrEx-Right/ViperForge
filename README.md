@@ -1,23 +1,19 @@
-```
-    ____   ____.__                     ___________                           
-    \   \ /   /|__|_____   ___________ \_   _____/__________  ____   ____  
-     \   Y   / |  \____ \_/ __ \_  __ \ |    __)/  _ \_  __ \/ ___\_/ __ \ 
-      \     /  |  |  |_> >  ___/|  | \/ |     \(  <_> )  | \/ /_/  >  ___/ 
-       \___/   |__|   __/ \___  >__|    \___  / \____/|__|  \___  / \___  >
-                  |__|        \/            \/             /_____/      \/ v1.1.0-beta
-                                Red Team Exploit Factory
-```
+<div align="center">
+<img src="docs/images/viperforge.png" alt="ViperForge Logo" width="220"/>
+
+# ViperForge
+### Red Team Exploit Factory &nbsp;·&nbsp; `2.0.0-beta`
+</div>
 
 <div align="center">
 
-![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go&logoColor=white)
-![Shell](https://img.shields.io/badge/Launcher-Bash-4EAA25?style=for-the-badge&logo=gnubash&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![PyQt6](https://img.shields.io/badge/GUI-PyQt6-41CD52?style=for-the-badge&logo=qt&logoColor=white)
 ![License](https://img.shields.io/badge/License-GPLv3-blue?style=for-the-badge)
-![Status](https://img.shields.io/badge/Status-Beta-orange?style=for-the-badge)
-![Version](https://img.shields.io/badge/Version-1.1.0--beta-red?style=for-the-badge)
+![Status](https://img.shields.io/badge/Status-Beta-e63946?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-2.0.0--beta-ff6680?style=for-the-badge)
 
-**Wizard-driven, modular Red Team exploit factory built in Go.**  
-*Inspired by Metasploit's interactive console — built for pwn scripts and payload generation.*
+**Visual, block-based Red Team exploit factory. Build multi-stage exploit chains by dragging blocks — no boilerplate, no guesswork.**
 
 </div>
 
@@ -30,16 +26,28 @@
 
 ---
 
+
+
+## Interface
+
+![ViperForge v2.0 GUI](docs/images/ui.png)
+
+> *Three-pane layout: **Exploit Block Palette** (left) · **Canvas** (center) · **Parameters + Live Preview** (right).*  
+> *Drag blocks onto the canvas, chain them with the ▼ connector, fill in parameters — hit **GENERATE EXPLOIT**.*
+
+---
+
 ## Overview
 
-ViperForge is an interactive, wizard-driven CLI framework that automates the generation of production-ready exploit scripts. It features a Metasploit-style interactive console, a categorized exploit registry with 18 modules, a polymorphic XOR encoder for shellcode obfuscation, automated C payload compilation, and a Python template engine (pwntools/requests compatible).
+ViperForge v2.0 is a node-based exploit builder. Each exploit module is a **block** you place on a canvas. Connect blocks with arrow connectors to define the attack flow. ViperForge generates a single, clean Python exploit script from the entire chain — with deduped imports, a shared `CTX` context dictionary, and an optional XOR-encoded shellcode payload.
 
 ### Why ViperForge?
 
-- **Speed**: Eliminate repetitive boilerplate. Go from vulnerability → weaponized script in seconds.
-- **Evasion-first**: Every binary payload is XOR-encoded with a polymorphic JMP-CALL-POP decoder stub — no two outputs are identical.
-- **Extensible**: Add new exploit categories and templates with minimal effort.
-- **CTF-ready**: Scripts are generated with pwntools/requests patterns that work out-of-the-box on competition platforms.
+- **Visual chain building** — See your attack flow as a graph. No more copy-pasting boilerplate between scripts.
+- **0-Day Builder micro-blocks** — Compose primitive operations (socket, send/recv, encode, XOR, HTTP, file I/O…) into custom exploit flows from scratch.
+- **Evasion-first payloads** — C shellcode is compiled with GCC, XOR-encoded with a random key, and embedded as a self-decoding Python `ctypes`/`mmap` stub. No two outputs are identical.
+- **Chain validator** — Detects broken chains (missing sockets, undefined variables, empty fields) before generation.
+- **Dual interface** — Full GUI for visual building; Rich-powered CLI for headless/terminal-only workflows.
 
 ---
 
@@ -47,205 +55,295 @@ ViperForge is an interactive, wizard-driven CLI framework that automates the gen
 
 | Feature | Description |
 |---|---|
-| 🗂️ **Categorized Exploit Registry** | 18 modules across 6 attack categories |
-| 🧙 **Interactive Wizard** | Metasploit-style parameter configuration per exploit |
-| 🔐 **Polymorphic XOR Encoder** | Runtime-randomized key + JMP-CALL-POP decoder stub |
-| ⚙️ **C Payload Compiler** | Auto-compiles `.c` payloads → shellcode via `gcc` + `objcopy` |
-| 📄 **Template Engine** | Go-templated Python exploit script generation |
-| 📜 **Command History** | Persistent readline history across sessions |
-| 🧹 **Clear / Back navigation** | MSF-style shell UX with `clear`, `back`, `exit` |
+| 🧩 **Visual Block Builder** | Drag-and-drop exploit blocks on an infinite canvas |
+| 🔗 **Chain Mode** | Connect blocks to generate multi-stage exploit scripts |
+| ⚡ **Live Code Preview** | Python syntax-highlighted output updates in real time |
+| 🛡️ **Chain Validator** | Pre-generation static analysis — catches errors before generation |
+| 💾 **Workspace Save / Load** | Save your block canvas to JSON and reload it later |
+| 🔐 **Polymorphic XOR Encoder** | Random key · `ctypes`/`mmap` self-decoding shellcode stub |
+| ⚙️ **C Payload Compiler** | Auto-compiles `.c` sources → raw shellcode via `gcc` + `objcopy` |
+| 🌐 **36 Exploit Modules** | 18 classic exploits + 18 Builder micro-blocks |
+| 🖥️ **CLI Mode** | Full `--cli` shell with Rich formatting and Chain Builder mode |
 
 ---
 
-## Exploit Categories & Modules
+## Exploit Modules
+
+### 🧱 Exploit Builder (0-Day) — Micro-Blocks
+
+Compose custom exploit flows from primitive operations. Designed to be chained together into a flat sequential script with a shared `CTX` dictionary.
+
+| Module | Description |
+|---|---|
+| `builder_socket` | Create a TCP network socket |
+| `builder_send` | Send data via socket |
+| `builder_recv` | Receive data from socket |
+| `builder_recv_until` | Receive until a pattern is matched (with timeout) |
+| `builder_pack` | Pack integers/bytes into a struct buffer |
+| `builder_p32_p64` | Fast pack an integer to 32/64-bit little-endian |
+| `builder_http_req` | HTTP GET / POST request |
+| `builder_b64encode` | Base64 encode a variable |
+| `builder_b64decode` | Base64 decode a variable |
+| `builder_urlencode` | URL-encode a string |
+| `builder_hex` | Hex encode or decode a variable |
+| `builder_xor` | XOR a bytes variable with a key |
+| `builder_shell_cmd` | Execute a local shell command (blocking / non-blocking) |
+| `builder_read_file` | Read a local file into a variable |
+| `builder_write_file` | Write a variable to a local file |
+| `builder_print` | Print a message or variable to console |
+| `builder_sleep` | Pause execution for N seconds |
+| `builder_custom` | Inject arbitrary Python code |
 
 ### 💥 Binary Exploitation
-| # | Module | Description |
-|---|---|---|
-| 1 | `bof_remote` | Remote Buffer Overflow via TCP |
-| 2 | `bof_local` | Local Buffer Overflow (CLI Arguments / Stdin) |
-| 3 | `rop_chain` | Return-Oriented Programming (ROP) Chain Generator |
-| 4 | `format_string` | Format String Arbitrary Memory Write |
-| 5 | `heap_uaf` | Heap Exploitation — Use-After-Free |
+
+| Module | Description |
+|---|---|
+| `bof_remote` | Remote Buffer Overflow via TCP |
+| `bof_local` | Local Buffer Overflow (CLI Arguments / Stdin) |
+| `rop_chain` | Return-Oriented Programming (ROP) Chain Generator |
+| `format_string` | Format String Arbitrary Memory Write |
+| `heap_uaf` | Heap Exploitation — Use-After-Free |
 
 ### 🌐 Web Exploitation
-| # | Module | Description |
-|---|---|---|
-| 6 | `web_lfi` | Local File Inclusion → RCE (Log Poisoning) |
-| 7 | `web_sqli` | Blind SQLi → RCE via `INTO OUTFILE` |
-| 8 | `web_ssti` | Server-Side Template Injection (Jinja2/Flask) |
-| 9 | `web_cmd_exec` | OS Command Injection via HTTP Parameters |
-| 10 | `web_xxe` | XML External Entity (XXE) Data Exfiltration |
-| 11 | `web_deserialization` | Insecure Deserialization (Python Pickle) |
-| 12 | `web_ssrf` | SSRF Internal Port Scanner |
+
+| Module | Description |
+|---|---|
+| `web_lfi` | Local File Inclusion → RCE (Log Poisoning) |
+| `web_sqli` | Blind SQLi → RCE via `INTO OUTFILE` |
+| `web_ssti` | Server-Side Template Injection (Jinja2/Flask) |
+| `web_cmd_exec` | OS Command Injection via HTTP (Base64-encoded, WAF-evasive) |
+| `web_xxe` | XML External Entity (XXE) Data Exfiltration |
+| `web_deserialization` | Insecure Deserialization (Python Pickle) |
+| `web_ssrf` | SSRF Internal Port Scanner |
 
 ### 🔼 Privilege Escalation
-| # | Module | Description |
-|---|---|---|
-| 13 | `privesc_suid` | SUID PATH Hijacking |
-| 14 | `privesc_sudo_token` | Sudo Token Hijacking |
+
+| Module | Description |
+|---|---|
+| `privesc_suid` | SUID PATH Hijacking |
+| `privesc_sudo_token` | Sudo Token Hijacking via `/proc/[pid]/mem` |
 
 ### 🌍 Network Attacks
-| # | Module | Description |
-|---|---|---|
-| 15 | `network_ftp_anon` | FTP Anonymous Login & Payload Upload |
-| 16 | `network_smb_relay` | SMB Relay Attack (Wrapper) |
+
+| Module | Description |
+|---|---|
+| `network_ftp_anon` | FTP Anonymous Login & Payload Upload |
+| `network_smb_relay` | SMB Relay Attack (Wrapper) |
 
 ### 🔒 Cryptography
-| # | Module | Description |
-|---|---|---|
-| 17 | `crypto_padding_oracle` | Padding Oracle Attack Automation |
+
+| Module | Description |
+|---|---|
+| `crypto_padding_oracle` | Padding Oracle Attack Automation |
 
 ### 🏢 Active Directory
-| # | Module | Description |
-|---|---|---|
-| 18 | `ad_kerberoasting` | Kerberoasting Attack Automation |
+
+| Module | Description |
+|---|---|
+| `ad_kerberoasting` | Kerberoasting Attack Automation (Impacket) |
 
 ---
 
 ## Installation
 
-### Prerequisites
+### Requirements
 
-- **Go** 1.21+
-- **GCC** (for C payload compilation — `gcc`, `objcopy`)
+- **Python 3.10+**
+- **GCC + binutils** (for C payload compilation)
   ```bash
-  sudo apt install gcc binutils
+  sudo apt install gcc binutils gcc-multilib
   ```
-- **Python 3** + `pwntools` / `requests` (for running generated exploit scripts)
+- **Python dependencies:**
+  ```bash
+  pip install -r requirements.txt
+  ```
+
+`requirements.txt`:
+```
+PyQt6>=6.6.0
+jinja2>=3.1.0
+rich>=13.0.0
+qtawesome>=1.3.0
+```
 
 ### Setup
 
 ```bash
 # Clone the repository
 git clone https://github.com/MrEx-Right/ViperForge.git
-cd viperforge
+cd ViperForge
 
-# Download Go dependencies
-go mod tidy
+# Install Python dependencies
+pip install -r requirements.txt
 
-# Make the launcher executable
-chmod +x viperforge.sh
+# Launch the GUI (default)
+python viperforge.py
 
-# Run
-./viperforge.sh
+# Or launch the CLI
+python viperforge.py --cli
 ```
-
-> The launcher script automatically compiles the Go binary on first run (and re-compiles whenever source changes), so you never need to run `go build` manually.
 
 ---
 
 ## Usage
 
+### GUI Mode (default)
+
 ```bash
-./viperforge.sh
+python viperforge.py
 ```
 
-### Navigation
+1. **Double-click** a block in the left palette to add it to the canvas.
+2. Click the **▼ connector** at the bottom of a block and then click another block to chain them.
+3. Select a block and fill in its **parameters** in the right panel.
+4. Watch the **live code preview** update as you type.
+5. Click **GENERATE EXPLOIT** — choose a save path and the script is written instantly.
 
+**Toolbar actions:**
+
+| Button | Action |
+|---|---|
+| 💾 Save WS | Save current canvas state to a JSON workspace file |
+| 📂 Load WS | Restore a previously saved canvas |
+| 🗑️ Clear Canvas | Remove all blocks and connectors |
+| 🔥 GENERATE EXPLOIT | Validate chain and generate the Python exploit script |
+
+**Canvas shortcuts:**
+
+| Input | Action |
+|---|---|
+| Scroll wheel | Zoom in / out |
+| Middle mouse drag | Pan canvas |
+| `Delete` / `Backspace` | Delete selected blocks or connectors |
+| Right-click a block | Edit · Replace with another module · Delete |
+
+### CLI Mode
+
+```bash
+python viperforge.py --cli
 ```
-ViperForge > [1-6]          Select an exploit category
-ViperForge (Category) > [N] Select a specific exploit module
-ViperForge > clear          Clear screen
-ViperForge > exit           Terminate session
-```
 
-### CLI Preview
+Select **Single Exploit Mode** to run the parameter wizard for a single module, or **Chain Builder Mode** to compose a multi-block chain interactively and generate the script in one step.
 
-![ViperForge CLI](docs/images/cli.png)
+---
 
-### Workflow Example — Remote Buffer Overflow
+## Chain Validation
 
-```
-[1] Binary Exploitation
-     ↓
-[1] bof_remote
-     ↓
- > RHOST (Target IP Address) [127.0.0.1]: 10.10.14.5
- > RPORT (Target Port) [4444]: 9001
- > OFFSET (Offset to EIP/RIP) [100]: 112
- > EIP (Return Address) [0x080484b6]: 0xdeadbeef
- > PAYLOAD (C Payload Name) []: execve
-     ↓
-[ EXPLOIT PREVIEW & EXECUTION PLAN ]
-     ↓
-[1] Generate Exploit Script  →  output/bof_remote_exploit.py
-```
+Before generating, ViperForge runs a static analysis pass on the block chain:
 
-### C Payloads
+| Check | Severity |
+|---|---|
+| `builder_send/recv/recv_until` used without a preceding `builder_socket` | ❌ Error |
+| A block reads a variable not produced by any earlier block | ⚠️ Warning |
+| `builder_custom` has an empty `CODE` field | ❌ Error |
+| `builder_pack` / `builder_p32_p64` VALUE is not a valid integer/hex | ❌ Error |
+| `builder_sleep` SECONDS is not a valid number | ❌ Error |
+| `builder_http_req` URL does not start with `http://` or `https://` | ⚠️ Warning |
+| `builder_read_file` / `builder_write_file` FILE_PATH is empty | ❌ Error |
+| Builder blocks and classic exploit blocks mixed in the same chain | ⚠️ Warning |
+
+Errors block generation. Warnings are shown but do not prevent script output.
+
+---
+
+## Generated Output
+
+Scripts are saved to the `output/` directory. Chain scripts include:
+
+- `#!/usr/bin/env python3` shebang
+- Auto-generated header with the block/module list
+- **Builder chains** — flat sequential code with deduped imports and a shared `CTX = {}` dict
+- **Classic chains** — each module wrapped in `stage_N_name()` functions, called by `main()`
+- **Hybrid chains** — builder blocks as flat code, classic modules as staged functions
+
+---
+
+## C Payloads
 
 Pre-built C payload sources in `templates/payloads/`:
 
 | File | Description |
 |---|---|
-| `execve.c` | Linux `execve("/bin/sh")` shellcode |
-| `win_exec.c` | Windows shellcode via PEB parsing + API hashing |
+| `execve.c` | Linux `execve("/bin/sh")` — 32-bit x86 position-independent |
+| `win_exec.c` | Windows shellcode via PEB parsing + API hashing (no import table) |
 
-Payloads are auto-compiled with GCC, extracted via `objcopy`, XOR-encoded with a random key, and embedded into the generated Python script.
+Payloads are compiled with GCC (`-m32 -fno-stack-protector -z execstack -nostdlib -static`), raw `.text` bytes extracted with `objcopy`, XOR-encoded with a random key, and embedded as a `ctypes`/`mmap` self-decoding Python stub.
 
 ---
 
-## Adding New Exploits
+## Adding New Modules
 
-**1. Create a template** in `templates/exploits/my_exploit.tmpl`:
+**1. Create a Jinja2 template** in `templates/exploits/my_exploit.j2`:
+
 ```python
 #!/usr/bin/env python3
-# ViperForge Generated Exploit — my_exploit
-from pwn import *
+# ViperForge — my_exploit
+import socket
 
-r = remote("{{.RHOST}}", {{.RPORT}})
+r = socket.create_connection(("{{ RHOST }}", {{ RPORT }}))
 # ... your exploit logic
 ```
 
-**2. Register the module** in `core/registry.go`:
-```go
-{
-    ID:          19,
-    Name:        "my_exploit",
-    Category:    "Binary Exploitation",
-    Description: "My Custom Exploit",
-    Template:    "my_exploit",
-    Options: []ExploitOption{
-        {"RHOST", "Target IP Address", "127.0.0.1"},
-        {"RPORT", "Target Port", "4444"},
-    },
-},
+**2. Register the module** in `viperforge/registry.py`:
+
+```python
+ExploitDef(
+    id=37, name="my_exploit", category="Binary Exploitation",
+    description="My Custom Exploit",
+    template="my_exploit",
+    options=[
+        ExploitOption("RHOST", "Target IP Address", "127.0.0.1"),
+        ExploitOption("RPORT", "Target Port", "4444"),
+    ],
+),
 ```
 
-That's it — ViperForge automatically discovers and routes the new module.
+ViperForge automatically discovers the new module — it appears in both the GUI palette and the CLI menus immediately.
 
 ---
 
 ## Architecture
 
 ```
-User Input (readline)
-       │
-       ▼
-  console/shell.go  ──► Category Menu ──► Exploit Menu ──► Wizard
-                                                               │
-                              ┌────────────────────────────────┘
-                              ▼
-                        core/session.go    (stores user options)
-                              │
-                    ┌─────────┴──────────┐
-                    ▼                    ▼
-             core/compiler.go      core/templater.go
-         (C source → shellcode)   (template → .py script)
-                    │
-                    ▼
-             core/encoder.go
-         (XOR encode + stub injection)
+viperforge.py  ──────────────────────────────────────────────────
+       │                                                          │
+       ▼ (--cli)                                    ▼ (default)  │
+ viperforge/cli/shell.py                  viperforge/gui/         │
+  Rich-powered interactive shell          ┌─────────────────────┐│
+  ├─ Single Exploit Mode                  │ main_window.py      ││
+  └─ Chain Builder Mode                  │ block_palette.py    ││
+                                         │ canvas.py           ││
+                                         │ block_item.py       ││
+                                         │ connector.py        ││
+                                         │ param_panel.py      ││
+                                         │ preview_panel.py    ││
+                                         └─────────────────────┘│
+                                                  │               │
+                        ──────────────────────────┘               │
+                        ▼                                          │
+              viperforge/engine.py   (Jinja2 rendering + chain assembly)
+                        │
+           ┌────────────┴────────────┐
+           ▼                         ▼
+  viperforge/compiler.py    viperforge/encoder.py
+  (C source → shellcode)    (XOR encode + ctypes/mmap stub)
+           │
+           ▼
+  viperforge/validator.py   (pre-generation chain analysis)
+  viperforge/registry.py    (36 ExploitDef entries)
+  viperforge/session.py     (per-block option storage)
 ```
 
 ---
 
 ## Dependencies
 
-| Package | Purpose |
-|---|---|
-| [`github.com/chzyer/readline`](https://github.com/chzyer/readline) | Interactive CLI with history & autocomplete |
-| `crypto/rand` (stdlib) | Cryptographically secure random key generation |
+| Package | Version | Purpose |
+|---|---|---|
+| `PyQt6` | ≥ 6.6.0 | GUI framework (PyQt5 also supported) |
+| `jinja2` | ≥ 3.1.0 | Exploit template rendering |
+| `rich` | ≥ 13.0.0 | CLI formatting and interactive prompts |
+| `qtawesome` | ≥ 1.3.0 | FontAwesome icons in the GUI |
 
 ---
 
