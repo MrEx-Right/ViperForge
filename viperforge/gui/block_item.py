@@ -59,17 +59,25 @@ ROW_H        = 22
 CORNER_R     = 12
 
 # Connector dimensions
-CONN_W  = 30
+CONN_W  = 26
 CONN_H  = 12
 CONN_R  = 5
+CONN_GAP = 14   # gap between success and failure pins
+
+# Pin colours
+PIN_SUCCESS_COLOR = "#00ff88"
+PIN_FAILURE_COLOR = "#e63946"
 
 
 class BlockSignals(QObject):
     """Separate QObject for QGraphicsItem signals."""
-    clicked      = pyqtSignal(object)   # BlockItem
-    moved        = pyqtSignal(object)   # BlockItem
-    connect_req  = pyqtSignal(object)   # BlockItem (bottom connector clicked)
-    delete_req   = pyqtSignal(object)   # BlockItem (delete requested via menu)
+    clicked              = pyqtSignal(object)   # BlockItem
+    moved                = pyqtSignal(object)   # BlockItem
+    connect_success_req  = pyqtSignal(object)   # BlockItem (success pin clicked)
+    connect_failure_req  = pyqtSignal(object)   # BlockItem (failure pin clicked)
+    delete_req           = pyqtSignal(object)   # BlockItem (delete requested via menu)
+    failure_pin_toggled  = pyqtSignal(object)   # BlockItem (failure pin enabled/disabled)
+    macro_requested      = pyqtSignal(list)     # list[BlockItem]
 
 
 class BlockItem(QGraphicsItem):
@@ -103,14 +111,16 @@ class BlockItem(QGraphicsItem):
 
         # State
         self._hovered   = False
-        self._connected = False   # connected to bottom connector?
+        self._connected_success = False
+        self._connected_failure = False
+        self._failure_enabled   = False   # Whether failure pin is visible
 
         # Tooltip
         self.setToolTip(f"{exploit_def.category}\n{exploit_def.description}")
 
     # ── Size ─────────────────────────────────────────────────────────────────
     def boundingRect(self) -> QRectF:
-        return QRectF(0, 0, BLOCK_W, self.block_h + CONN_H)
+        return QRectF(0, 0, BLOCK_W, self.block_h + CONN_H + 2)
 
     # ── Paint ─────────────────────────────────────────────────────────────────
     def paint(
@@ -188,20 +198,42 @@ class BlockItem(QGraphicsItem):
             painter.setPen(QColor(TEXT_PRIMARY))
             painter.drawText(QRectF(90, y + 2, BLOCK_W - 100, ROW_H - 4), _ALIGN_V, val_str)
 
-        # ── Bottom connector (for chain) ────────────────────────────────────
-        conn_x = (BLOCK_W - CONN_W) / 2
-        conn_y = self.block_h
-        conn_rect = QRectF(conn_x, conn_y, CONN_W, CONN_H)
+        # ── Bottom connectors (Success / Failure pins) ────────────────────────
+        if self._failure_enabled:
+            # Two pins side by side
+            total_w = CONN_W * 2 + CONN_GAP
+            base_x = (BLOCK_W - total_w) / 2
+            # Success pin (left — green)
+            s_rect = QRectF(base_x, self.block_h, CONN_W, CONN_H)
+            s_color = QColor(PIN_SUCCESS_COLOR) if self._connected_success else QColor(BORDER_DARK)
+            painter.setPen(QPen(s_color, 1))
+            painter.setBrush(QBrush(QColor(s_color.red(), s_color.green(), s_color.blue(), 120)))
+            painter.drawRoundedRect(s_rect, CONN_R, CONN_R)
+            painter.setFont(QFont("Consolas", 6))
+            painter.setPen(s_color)
+            painter.drawText(s_rect, _ALIGN_C, "OK")
 
-        conn_color = self.accent if self._connected else QColor(BORDER_DARK)
-        painter.setPen(QPen(conn_color, 1))
-        painter.setBrush(QBrush(QColor(conn_color.red(), conn_color.green(), conn_color.blue(), 120)))
-        painter.drawRoundedRect(conn_rect, CONN_R, CONN_R)
-
-        # Connector icon
-        painter.setFont(QFont("Consolas", 7))
-        painter.setPen(conn_color)
-        painter.drawText(conn_rect, _ALIGN_C, "v")
+            # Failure pin (right — red)
+            f_rect = QRectF(base_x + CONN_W + CONN_GAP, self.block_h, CONN_W, CONN_H)
+            f_color = QColor(PIN_FAILURE_COLOR) if self._connected_failure else QColor(BORDER_DARK)
+            painter.setPen(QPen(f_color, 1))
+            painter.setBrush(QBrush(QColor(f_color.red(), f_color.green(), f_color.blue(), 120)))
+            painter.drawRoundedRect(f_rect, CONN_R, CONN_R)
+            painter.setFont(QFont("Consolas", 6))
+            painter.setPen(f_color)
+            painter.drawText(f_rect, _ALIGN_C, "ERR")
+        else:
+            # Single success pin (centred — green when connected)
+            conn_x = (BLOCK_W - CONN_W) / 2
+            conn_y = self.block_h
+            conn_rect = QRectF(conn_x, conn_y, CONN_W, CONN_H)
+            conn_color = QColor(PIN_SUCCESS_COLOR) if self._connected_success else QColor(BORDER_DARK)
+            painter.setPen(QPen(conn_color, 1))
+            painter.setBrush(QBrush(QColor(conn_color.red(), conn_color.green(), conn_color.blue(), 120)))
+            painter.drawRoundedRect(conn_rect, CONN_R, CONN_R)
+            painter.setFont(QFont("Consolas", 7))
+            painter.setPen(conn_color)
+            painter.drawText(conn_rect, _ALIGN_C, "v")
 
     # ── Hover ─────────────────────────────────────────────────────────────────
     def hoverEnterEvent(self, event):
@@ -215,15 +247,31 @@ class BlockItem(QGraphicsItem):
     # ── Click -> select and send signal ─────────────────────────────────────────
     def mousePressEvent(self, event):
         super().mousePressEvent(event)
-        # Connector click?
         local_pos = event.pos()
-        conn_x = (BLOCK_W - CONN_W) / 2
         conn_y = self.block_h
-        if (conn_x <= local_pos.x() <= conn_x + CONN_W and
-                conn_y <= local_pos.y() <= conn_y + CONN_H):
-            self.signals.connect_req.emit(self)
+
+        if self._failure_enabled:
+            total_w = CONN_W * 2 + CONN_GAP
+            base_x = (BLOCK_W - total_w) / 2
+            # Success pin hit-test
+            if (base_x <= local_pos.x() <= base_x + CONN_W and
+                    conn_y <= local_pos.y() <= conn_y + CONN_H):
+                self.signals.connect_success_req.emit(self)
+                return
+            # Failure pin hit-test
+            fx = base_x + CONN_W + CONN_GAP
+            if (fx <= local_pos.x() <= fx + CONN_W and
+                    conn_y <= local_pos.y() <= conn_y + CONN_H):
+                self.signals.connect_failure_req.emit(self)
+                return
         else:
-            self.signals.clicked.emit(self)
+            conn_x = (BLOCK_W - CONN_W) / 2
+            if (conn_x <= local_pos.x() <= conn_x + CONN_W and
+                    conn_y <= local_pos.y() <= conn_y + CONN_H):
+                self.signals.connect_success_req.emit(self)
+                return
+
+        self.signals.clicked.emit(self)
 
     def mouseReleaseEvent(self, event):
         super().mouseReleaseEvent(event)
@@ -235,16 +283,45 @@ class BlockItem(QGraphicsItem):
             self.signals.moved.emit(self)
         return super().itemChange(change, value)
 
-    # ── Connector center point ──────────────────────────────────────────────
+    # ── Connector center points ──────────────────────────────────────────────
     def top_connector_pos(self) -> QPointF:
         return self.mapToScene(QPointF(BLOCK_W / 2, 0))
 
     def bottom_connector_pos(self) -> QPointF:
+        """Legacy: centre bottom (used when failure pin is disabled)."""
         return self.mapToScene(QPointF(BLOCK_W / 2, self.block_h + CONN_H))
 
-    def set_connected(self, state: bool) -> None:
-        self._connected = state
+    def success_connector_pos(self) -> QPointF:
+        if self._failure_enabled:
+            total_w = CONN_W * 2 + CONN_GAP
+            base_x = (BLOCK_W - total_w) / 2
+            cx = base_x + CONN_W / 2
+        else:
+            cx = BLOCK_W / 2
+        return self.mapToScene(QPointF(cx, self.block_h + CONN_H))
+
+    def failure_connector_pos(self) -> QPointF:
+        total_w = CONN_W * 2 + CONN_GAP
+        base_x = (BLOCK_W - total_w) / 2
+        cx = base_x + CONN_W + CONN_GAP + CONN_W / 2
+        return self.mapToScene(QPointF(cx, self.block_h + CONN_H))
+
+    def set_connected(self, state: bool, port_type: str = "success") -> None:
+        if port_type == "failure":
+            self._connected_failure = state
+        else:
+            self._connected_success = state
         self.update()
+
+    @property
+    def failure_enabled(self) -> bool:
+        return self._failure_enabled
+
+    @failure_enabled.setter
+    def failure_enabled(self, val: bool) -> None:
+        self._failure_enabled = val
+        self.update()
+        self.signals.moved.emit(self)
 
     def refresh(self) -> None:
         """Refresh block when session changes."""
@@ -268,11 +345,22 @@ class BlockItem(QGraphicsItem):
             QMenu::item:selected {{ background: #e63946; }}
         """)
         
+        selected_blocks = [item for item in self.scene().selectedItems() if isinstance(item, BlockItem)]
+        action_macro = None
+        
+        # If multiple blocks are selected, add Create Macro to top of menu
+        if len(selected_blocks) >= 2:
+            action_macro = menu.addAction(
+                qta.icon('fa5s.layer-group', color='#ffd60a'),
+                f"Create Macro ({len(selected_blocks)} blocks)"
+            )
+            menu.addSeparator()
+        
         # Edit
-        action_edit = menu.addAction(qta.icon('fa5s.edit', color='white'), "Düzenle")
+        action_edit = menu.addAction(qta.icon('fa5s.edit', color='white'), "Edit")
         
         # Replace
-        menu_replace = menu.addMenu(qta.icon('fa5s.exchange-alt', color='#ffaa00'), "Başka blokla değiştir")
+        menu_replace = menu.addMenu(qta.icon('fa5s.exchange-alt', color='#ffaa00'), "Replace with...")
         menu_replace.setStyleSheet(f"""
             QMenu {{ background: #1a1a2e; color: {TEXT_PRIMARY}; border: 1px solid {BORDER_DARK}; }}
             QMenu::item:selected {{ background: #ffaa00; color: black; }}
@@ -292,13 +380,35 @@ class BlockItem(QGraphicsItem):
                 act.triggered.connect(lambda checked, e=exp: self.change_exploit(e))
 
         menu.addSeparator()
+
+        # Toggle failure pin
+        if self._failure_enabled:
+            action_fp = menu.addAction(
+                qta.icon('fa5s.times-circle', color=PIN_FAILURE_COLOR),
+                "Remove Failure Pin"
+            )
+        else:
+            action_fp = menu.addAction(
+                qta.icon('fa5s.code-branch', color=PIN_SUCCESS_COLOR),
+                "Add Failure Pin (Branch)"
+            )
+
+        menu.addSeparator()
         
         # Delete
-        action_delete = menu.addAction(qta.icon('fa5s.trash-alt', color='#ff4455'), "Sil")
+        action_delete = menu.addAction(qta.icon('fa5s.trash-alt', color='#ff4455'), "Delete")
 
         # Execute menu
         selected = menu.exec(event.screenPos())
         if selected == action_edit:
             self.signals.clicked.emit(self)
+        elif selected == action_fp:
+            self._failure_enabled = not self._failure_enabled
+            self.prepareGeometryChange()
+            self.update()
+            self.signals.failure_pin_toggled.emit(self)
+            self.signals.moved.emit(self)   # redraw connectors
         elif selected == action_delete:
             self.signals.delete_req.emit(self)
+        elif action_macro and selected == action_macro:
+            self.signals.macro_requested.emit(selected_blocks)

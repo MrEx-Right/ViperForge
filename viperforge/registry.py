@@ -15,6 +15,7 @@ CATEGORY_COLORS = {
     "Cryptography":         "#fee440",   # neon yellow
     "Active Directory":     "#00b4d8",   # neon blue
     "Exploit Builder (0-Day)": "#00ff88", # neon green
+    "Macros":               "#ffd60a",   # neon gold
 }
 
 CATEGORY_ICONS = {
@@ -25,6 +26,7 @@ CATEGORY_ICONS = {
     "Cryptography":         "fa5s.lock",
     "Active Directory":     "fa5s.building",
     "Exploit Builder (0-Day)": "fa5s.puzzle-piece",
+    "Macros":               "fa5s.layer-group",
 }
 
 
@@ -231,6 +233,53 @@ REGISTRY: List[ExploitDef] = [
             ExploitOption("ARCH", "Architecture (32 or 64)", "32"),
             ExploitOption("OUTPUT_VAR", "Variable name to store packed bytes", "packed_val"),
             ExploitOption("APPEND_TO", "Existing buffer var to append to (optional)", ""),
+        ],
+    ),
+
+    # ── Logic / Loop Micro-Blocks ──────────────────────────────────────────────
+    ExploitDef(
+        id=37, name="builder_if_else", category="Exploit Builder (0-Day)",
+        description="Conditional branch based on CTX variable",
+        template="builder_if_else",
+        options=[
+            ExploitOption("VAR_NAME",      "CTX variable name to evaluate",    "response"),
+            ExploitOption("OPERATOR",      "Comparison operator (==, !=, contains, >, <)", "=="),
+            ExploitOption("COMPARE_VALUE", "Value to compare against",         "200"),
+        ],
+    ),
+    ExploitDef(
+        id=38, name="builder_loop", category="Exploit Builder (0-Day)",
+        description="Iterate over wordlist, range, or file lines",
+        template="builder_loop",
+        options=[
+            ExploitOption("MODE",         "Loop mode (LIST, RANGE, FILE)",    "LIST"),
+            ExploitOption("WORDLIST_VAR", "CTX variable holding the list",    "wordlist"),
+            ExploitOption("ITERATOR_VAR", "Iterator variable name",           "item"),
+            ExploitOption("RANGE_START",  "Range start (if MODE=RANGE)",      "0"),
+            ExploitOption("RANGE_END",    "Range end (if MODE=RANGE)",        "100"),
+            ExploitOption("FILE_PATH",    "File path (if MODE=FILE)",         "wordlist.txt"),
+        ],
+    ),
+    ExploitDef(
+        id=39, name="builder_try_catch", category="Exploit Builder (0-Day)",
+        description="Wrap next blocks in try/except for error handling",
+        template="builder_try_catch",
+        options=[
+            ExploitOption("ERROR_TYPES",    "Exception types to catch (Timeout, ConnectionReset, All)", "All"),
+            ExploitOption("FALLBACK_ACTION","Action on error (SKIP, RETRY, LOG)",                      "LOG"),
+            ExploitOption("RETRY_COUNT",    "Number of retries (if RETRY)",                             "3"),
+        ],
+    ),
+    ExploitDef(
+        id=40, name="builder_variable_set", category="Exploit Builder (0-Day)",
+        description="Set a CTX variable (static, regex, or eval)",
+        template="builder_variable_set",
+        options=[
+            ExploitOption("VAR_NAME",      "CTX variable name to set",         "token"),
+            ExploitOption("VALUE",         "Static value or eval expression",  ""),
+            ExploitOption("MODE",          "Mode (STATIC, REGEX, EVAL)",       "STATIC"),
+            ExploitOption("REGEX_PATTERN", "Regex pattern with group(1)",      ""),
+            ExploitOption("SOURCE_VAR",    "CTX variable to apply regex on",   "response"),
         ],
     ),
 

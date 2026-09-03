@@ -6,7 +6,34 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.1.0-beta] — 2026-09-03
+
+### Added
+
+#### Dual-Pin Branching Support
+- Added multi-output ports (Success / Failure pins) to blocks in the canvas.
+- Introduced `failure_enabled` toggle via right-click context menu for conditional branching.
+- Exploit engine now supports generating `try/except` and `if/else` logic based on pin connections.
+
+#### Logic and Loop Micro-Blocks
+- Expanded Exploit Builder with 4 new logic blocks:
+  - `builder_if_else`: Conditional branching based on variables in the context (CTX).
+  - `builder_loop`: Loop execution over lists, numerical ranges, or file lines.
+  - `builder_try_catch`: Error handling with fallback logic for socket and network operations.
+  - `builder_variable_set`: Dynamic variable assignment (static, regex, eval) during execution.
+- Added validation rules for the new logic blocks to prevent broken chain generation.
+
+#### Macro / Composite Blocks
+- Introduced a macro system to group multiple blocks into reusable sub-graphs.
+- Added a Macro creation dialog for saving selected block chains into `workspaces/macros/`.
+- Macro blocks are rendered with a distinct gold UI and a block count badge.
+- Added a "Macros" category in the Block Palette and a toolbar button for quick access.
+- Exploit engine dynamically expands macro blocks inline during code generation.
+
+---
+
 ## [2.0.0-beta] — 2026-07-14
+
 
 > 🐍 **ViperForge v2.0 — Full Python rewrite with a visual block-based exploit builder.**  
 > *The entire framework has been rewritten from Go to Python. A node-based GUI, a rebuilt CLI, an expanded exploit registry, and a modular 0-Day Builder system.*

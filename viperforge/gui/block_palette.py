@@ -34,6 +34,7 @@ _CAT_DESC = {
     "Network Attacks":         "FTP - SMB - relay",
     "Cryptography":            "Padding oracle - hash",
     "Active Directory":        "Kerberoast - AS-REP",
+    "Macros":                  "User-defined sub-routines",
 }
 
 # --- Exploit item ---
@@ -427,3 +428,62 @@ class BlockPalette(QWidget):
 
     def _on_dclick(self, exploit):
         self.exploit_selected.emit(exploit)
+
+    def refresh_macros(self):
+        """Reload saved macros into the palette (called after a macro is saved)."""
+        from viperforge.macro import list_macros
+        from viperforge.registry import CATEGORY_COLORS, CATEGORY_ICONS, ExploitDef, ExploitOption
+
+        # Remove existing Macros category if present
+        for cat_data in list(self._categories):
+            if cat_data['header'].cat == 'Macros':
+                cat_data['header'].setParent(None)
+                cat_data['container'].setParent(None)
+                self._categories.remove(cat_data)
+                break
+
+        macros = list_macros()
+        if not macros:
+            return
+
+        # Create virtual ExploitDefs for macros
+        macro_exploits = []
+        for m in macros:
+            vdef = ExploitDef(
+                id=-1,
+                name=m.name,
+                category="Macros",
+                description=m.description or f"Macro ({len(m.blocks)} blocks)",
+                template="",
+                options=[],
+            )
+            # Attach macro_def for later use
+            vdef._macro_def = m
+            macro_exploits.append(vdef)
+
+        cat_header = _CatHeader("Macros", len(macro_exploits))
+        self._content_layout.insertWidget(self._content_layout.count() - 1, cat_header)
+
+        container = QWidget()
+        container.setStyleSheet(f"background: {BG_PANEL};")
+        c_vl = QVBoxLayout(container)
+        c_vl.setContentsMargins(0, 0, 0, 0)
+        c_vl.setSpacing(0)
+
+        items = []
+        for vdef in macro_exploits:
+            row = _ExploitItem(vdef)
+            row.dclicked.connect(self._on_dclick)
+            c_vl.addWidget(row)
+            items.append(row)
+
+        cat_header.set_container(container)
+        self._content_layout.insertWidget(self._content_layout.count() - 1, container)
+
+        cat_header._badge = cat_header.layout().itemAt(2).widget()
+
+        self._categories.append({
+            'header': cat_header,
+            'container': container,
+            'items': items,
+        })

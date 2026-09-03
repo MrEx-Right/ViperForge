@@ -31,6 +31,7 @@ CATEGORY_QSS_COLORS = {
     "Cryptography":             "#fee440",
     "Active Directory":         "#00b4d8",
     "Exploit Builder (0-Day)": "#00ff88",
+    "Macros":                   "#ffd60a",
 }
 
 # ── Main window QSS ──────────────────────────────────────────────────────────

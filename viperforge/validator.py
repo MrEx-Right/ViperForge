@@ -33,18 +33,19 @@ _CTX_READERS = {
 
 # Builder blocks that WRITE into a CTX variable (output_var or similar)
 _CTX_WRITERS = {
-    "builder_socket":    "SOCK_NAME",
-    "builder_recv":      "RECV_VAR",
-    "builder_recv_until":"RECV_VAR",
-    "builder_http_req":  "RESP_VAR",
-    "builder_b64encode": "OUTPUT_VAR",
-    "builder_b64decode": "OUTPUT_VAR",
-    "builder_urlencode": "OUTPUT_VAR",
-    "builder_hex":       "OUTPUT_VAR",
-    "builder_xor":       "OUTPUT_VAR",
-    "builder_read_file": "OUTPUT_VAR",
-    "builder_pack":      "VAR_NAME",
-    "builder_p32_p64":   "OUTPUT_VAR",
+    "builder_socket":       "SOCK_NAME",
+    "builder_recv":         "RECV_VAR",
+    "builder_recv_until":   "RECV_VAR",
+    "builder_http_req":     "RESP_VAR",
+    "builder_b64encode":    "OUTPUT_VAR",
+    "builder_b64decode":    "OUTPUT_VAR",
+    "builder_urlencode":    "OUTPUT_VAR",
+    "builder_hex":          "OUTPUT_VAR",
+    "builder_xor":          "OUTPUT_VAR",
+    "builder_read_file":    "OUTPUT_VAR",
+    "builder_pack":         "VAR_NAME",
+    "builder_p32_p64":      "OUTPUT_VAR",
+    "builder_variable_set": "VAR_NAME",
 }
 
 # Severity levels
@@ -199,6 +200,76 @@ def validate_chain(blocks, sessions) -> List[ValidationIssue]:
                 issues.append(ValidationIssue(
                     ERROR, name, "FILE_PATH is empty."
                 ))
+
+        # ── builder_if_else: check VAR_NAME is not empty ─────────────────
+        if name == "builder_if_else":
+            var = _get_opt(session, "VAR_NAME", "")
+            if not var.strip():
+                issues.append(ValidationIssue(
+                    ERROR, name, "VAR_NAME is empty — condition has nothing to evaluate."
+                ))
+            op = _get_opt(session, "OPERATOR", "==")
+            if op not in ("==", "!=", "contains", ">", "<"):
+                issues.append(ValidationIssue(
+                    WARNING, name,
+                    f"OPERATOR '{op}' is not one of ==, !=, contains, >, <."
+                ))
+
+        # ── builder_loop: validate by mode ───────────────────────────────
+        if name == "builder_loop":
+            mode = _get_opt(session, "MODE", "LIST")
+            if mode == "FILE":
+                fpath = _get_opt(session, "FILE_PATH", "")
+                if not fpath.strip():
+                    issues.append(ValidationIssue(
+                        ERROR, name, "FILE_PATH is empty (MODE=FILE requires a path)."
+                    ))
+            elif mode == "RANGE":
+                for key in ("RANGE_START", "RANGE_END"):
+                    val = _get_opt(session, key, "0")
+                    try:
+                        int(val)
+                    except ValueError:
+                        issues.append(ValidationIssue(
+                            ERROR, name, f"{key} '{val}' is not a valid integer."
+                        ))
+
+        # ── builder_try_catch: validate retry count ──────────────────────
+        if name == "builder_try_catch":
+            action = _get_opt(session, "FALLBACK_ACTION", "LOG")
+            if action == "RETRY":
+                rc = _get_opt(session, "RETRY_COUNT", "3")
+                try:
+                    n = int(rc)
+                    if n < 1:
+                        raise ValueError
+                except ValueError:
+                    issues.append(ValidationIssue(
+                        ERROR, name,
+                        f"RETRY_COUNT '{rc}' must be a positive integer."
+                    ))
+
+        # ── builder_variable_set: validate by mode ───────────────────────
+        if name == "builder_variable_set":
+            vmode = _get_opt(session, "MODE", "STATIC")
+            vname = _get_opt(session, "VAR_NAME", "")
+            if not vname.strip():
+                issues.append(ValidationIssue(
+                    ERROR, name, "VAR_NAME is empty — nothing to set."
+                ))
+            if vmode == "REGEX":
+                pat = _get_opt(session, "REGEX_PATTERN", "")
+                if not pat.strip():
+                    issues.append(ValidationIssue(
+                        ERROR, name,
+                        "REGEX_PATTERN is empty (MODE=REGEX requires a pattern)."
+                    ))
+                src_var = _get_opt(session, "SOURCE_VAR", "")
+                if src_var and src_var not in ctx_vars:
+                    issues.append(ValidationIssue(
+                        WARNING, name,
+                        f"SOURCE_VAR '{src_var}' has not been produced by a previous block."
+                    ))
 
     # Warn if only one block but chain mode would be triggered
     if len(ordered) == 1 and has_builder:

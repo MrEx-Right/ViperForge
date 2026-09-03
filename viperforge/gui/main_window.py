@@ -1,6 +1,7 @@
 """
-ViperForge v2.0 — Main Window
+ViperForge v2.1 — Main Window
 Main PyQt6 window: palette + canvas + right panel.
+Macro system and dual-pin branching support.
 """
 
 import os
@@ -60,10 +61,16 @@ from viperforge.registry import ExploitDef
 from viperforge.session import Session
 from viperforge.engine import generate_single, generate_chain, preview_single, preview_chain
 from viperforge.validator import validate_chain, ERROR as V_ERROR, WARNING as V_WARNING
+from viperforge.macro import (
+    MacroDef, save_macro, load_macro, list_macros,
+    create_macro_from_blocks, macro_to_sessions,
+)
 
 from .block_palette import BlockPalette
 from .canvas import ExploitCanvas
 from .block_item import BlockItem
+from .macro_block_item import MacroBlockItem
+from .macro_dialog import MacroDialog
 from .param_panel import ParamPanel
 from .preview_panel import PreviewPanel
 from .theme import (
@@ -207,7 +214,7 @@ class MainWindow(QMainWindow):
             " <b style='color:#e63946; font-size:15px;'>ViperForge</b>"
             "  <span style='background:#3d0010; color:#ff6680; border:1px solid #e6394688;"
             " border-radius:3px; padding:1px 6px; font-size:9px; font-weight:bold;"
-            " letter-spacing:1px;'>2.0.0-beta</span>"
+            " letter-spacing:1px;'>2.1.0-beta</span>"
             "  <span style='color:#666680; font-size:10px;'>Block Exploit Builder</span>"
         )
         logo.setTextFormat(_text_format_rich())
@@ -255,6 +262,14 @@ class MainWindow(QMainWindow):
         self._btn_generate.setObjectName("btn_generate")
         self._btn_generate.setFixedHeight(34)
         tb.addWidget(self._btn_generate)
+
+        tb.addSeparator()
+
+        self._btn_macros = QPushButton(" Macros")
+        self._btn_macros.setIcon(qta.icon('fa5s.layer-group', color='#ffd60a'))
+        self._btn_macros.setFixedHeight(32)
+        self._btn_macros.setToolTip("Saved macro blocks")
+        tb.addWidget(self._btn_macros)
 
         return tb
 
@@ -377,11 +392,13 @@ class MainWindow(QMainWindow):
         self.palette.exploit_selected.connect(self._on_exploit_selected)
         self.canvas.block_selected.connect(self._on_block_selected)
         self.canvas.canvas_changed.connect(self._on_canvas_changed)
+        self.canvas.macro_requested.connect(self._on_macro_requested)
         self.param_panel.param_changed.connect(self._on_param_changed)
         self._btn_save_ws.clicked.connect(self._on_save_workspace)
         self._btn_load_ws.clicked.connect(self._on_load_workspace)
         self._btn_clear.clicked.connect(self._on_clear_canvas)
         self._btn_generate.clicked.connect(self._on_generate)
+        self._btn_macros.clicked.connect(self._on_show_macros)
 
     # ─── Helpers ─────────────────────────────────────────────────────────────
     def _get_ordered_sessions(self):
@@ -617,3 +634,106 @@ class MainWindow(QMainWindow):
 
     def _set_status(self, msg: str) -> None:
         self._status.showMessage(f"  {msg}")
+
+    # ── Macro handlers ──────────────────────────────────────────────────────
+    def _on_macro_requested(self, selected_blocks: list) -> None:
+        """Canvas context menu -> Create Macro from selected blocks."""
+        import uuid as _uuid
+        # Gather block data and connections between them
+        block_set = set(id(b) for b in selected_blocks)
+        block_ids = {}
+        blocks_data = []
+        for b in selected_blocks:
+            bid = str(_uuid.uuid4())
+            block_ids[id(b)] = bid
+            opts = dict(b.session.options)
+            blocks_data.append({
+                "uuid": bid,
+                "exploit_id": b.exploit_def.id,
+                "x": b.x(),
+                "y": b.y(),
+                "options": opts,
+                "failure_enabled": getattr(b, '_failure_enabled', False),
+            })
+
+        conns_data = []
+        for c in self.canvas._connectors:
+            if id(c.src) in block_set and id(c.dst) in block_set:
+                conns_data.append({
+                    "src": block_ids.get(id(c.src), ""),
+                    "dst": block_ids.get(id(c.dst), ""),
+                    "port_type": c.port_type,
+                })
+
+        dialog = MacroDialog(blocks_data, conns_data, parent=self)
+        dialog.macro_saved.connect(self._on_macro_saved)
+        dialog.exec()
+
+    def _on_macro_saved(self, name: str, desc: str,
+                         blocks_data: list, conns_data: list) -> None:
+        macro = create_macro_from_blocks(name, desc, blocks_data, conns_data)
+        path = save_macro(macro)
+        self._set_status(f"[OK]  Macro saved: {name} → {path}")
+        # Refresh palette to show new macros
+        self.palette.refresh_macros()
+
+    def _on_show_macros(self) -> None:
+        """Show menu of available macros to add to canvas."""
+        macros = list_macros()
+        if not macros:
+            QMessageBox.information(
+                self, "Macros",
+                "No macros saved yet.\n\n"
+                "You can create one by selecting 2+ blocks on the canvas,\n"
+                "right-clicking, and choosing 'Create Macro'."
+            )
+            return
+
+        from PyQt6.QtWidgets import QMenu
+        menu = QMenu(self)
+        menu.setStyleSheet(f"""
+            QMenu {{ background: #1a1a2e; color: {TEXT_PRIMARY}; border: 1px solid {BORDER_DARK}; }}
+            QMenu::item:selected {{ background: {ACCENT_GOLD}; color: black; }}
+        """)
+
+        for m in macros:
+            act = menu.addAction(
+                qta.icon('fa5s.layer-group', color=ACCENT_GOLD),
+                f"{m.name}  ({len(m.blocks)} blocks)"
+            )
+            act.triggered.connect(lambda checked, md=m: self._add_macro_to_canvas(md))
+
+        menu.exec(self._btn_macros.mapToGlobal(
+            self._btn_macros.rect().bottomLeft()
+        ))
+
+    def _add_macro_to_canvas(self, macro_def: MacroDef) -> None:
+        """Add a macro block to the canvas."""
+        session = Session()
+        block = MacroBlockItem(macro_def, session)
+
+        # Position
+        if self.canvas.blocks:
+            last = self.canvas.blocks[-1]
+            x = last.x()
+            y = last.y() + last.block_h + 80
+        else:
+            center = self.canvas.mapToScene(self.canvas.viewport().rect().center())
+            x = center.x() - 110
+            y = center.y() - 60
+
+        block.setPos(x, y)
+        self.canvas._scene.addItem(block)
+        self.canvas._blocks.append(block)
+
+        block.signals.clicked.connect(self.canvas._on_block_clicked)
+        block.signals.moved.connect(self.canvas._on_block_moved)
+        block.signals.connect_success_req.connect(self.canvas._on_connect_success_req)
+        block.signals.connect_failure_req.connect(self.canvas._on_connect_failure_req)
+        block.signals.delete_req.connect(self.canvas._on_block_delete_req)
+        block.signals.failure_pin_toggled.connect(self.canvas._on_failure_pin_toggled)
+        block.signals.macro_requested.connect(self.canvas.macro_requested.emit)
+
+        self._block_sessions[block] = session
+        self.canvas.canvas_changed.emit()
+        self._set_status(f"Macro added: {macro_def.name}")

@@ -1,10 +1,12 @@
 """
-ViperForge v2.0 — Exploit Engine
+ViperForge v2.1 — Exploit Engine
 Generates Python exploits from block chain or single session using Jinja2 templates.
 
 Chain modes:
   - "builder_*" blocks  → flat sequential code (CTX shared dict, imports deduped)
   - Classic blocks      → each wrapped in its own function, called by main()
+  - Macro blocks        → expanded inline into their constituent blocks
+  - Success/Failure     → branching via try/except and if/else in generated code
 """
 
 import re
@@ -59,12 +61,35 @@ def _is_builder(session: Session) -> bool:
 
 def _render_template(session: Session, env: Environment) -> str:
     """Render a single session template and return the code string."""
+    if not session.active_exploit or not session.active_exploit.template:
+        return ""  # macro blocks have no template
     tmpl_name = f"{session.active_exploit.template}.j2"
     try:
         tmpl = env.get_template(tmpl_name)
     except Exception as e:
         raise RuntimeError(f"Template not found: {tmpl_name} — {e}")
     return tmpl.render(**session.to_dict())
+
+
+def _expand_macros(sessions: List[Session]) -> List[Session]:
+    """Expand any macro sessions into their constituent sub-sessions."""
+    expanded = []
+    for s in sessions:
+        if (s.active_exploit and
+            hasattr(s.active_exploit, '_macro_def') and
+            s.active_exploit._macro_def is not None):
+            # Import here to avoid circular deps
+            from .macro import macro_to_sessions
+            inner = macro_to_sessions(s.active_exploit._macro_def)
+            expanded.extend(inner)
+        elif (s.active_exploit and s.active_exploit.id == -1 and
+              not s.active_exploit.template):
+            # MacroBlockItem stores macro_def on the block, but session
+            # won't have it. Skip empty macro sessions.
+            continue
+        else:
+            expanded.append(s)
+    return expanded
 
 
 # ─── Single block ──────────────────────────────────────────────────────────────
@@ -213,9 +238,13 @@ def generate_chain(sessions: List[Session], out_path: Optional[str] = None) -> s
     Chain mode: generates a single exploit script from multiple sessions.
     Automatically selects flat-mode (builder_*) or function-wrap mode (classic).
     Mixed chains get a hybrid treatment: builders run first as flat, classics as functions.
+    Macro blocks are expanded inline.
     """
     if not sessions:
         raise RuntimeError("No sessions in chain.")
+
+    # Expand macros
+    sessions = _expand_macros(sessions)
 
     env = _get_jinja_env()
 
@@ -285,6 +314,9 @@ def preview_chain(sessions: List[Session]) -> str:
     """For GUI chain preview: returns the full chain code without writing to file."""
     if not sessions:
         return "# No blocks in chain."
+
+    # Expand macros
+    sessions = _expand_macros(sessions)
 
     env = _get_jinja_env()
 

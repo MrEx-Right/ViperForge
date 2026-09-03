@@ -1,15 +1,15 @@
 """
-ViperForge v2.0 — Canvas (QGraphicsView + Scene)
-Drag-and-drop block editor.
+ViperForge v2.1 — Canvas (QGraphicsView + Scene)
+Drag-and-drop block editor with Success/Failure branching.
 """
 
 try:
-    from PyQt6.QtWidgets import QGraphicsView, QGraphicsScene
+    from PyQt6.QtWidgets import QGraphicsView, QGraphicsScene, QMenu
     from PyQt6.QtGui import QColor, QPainter, QBrush, QPen
     from PyQt6.QtCore import Qt, QPointF, pyqtSignal
     _PY6 = True
 except ImportError:
-    from PyQt5.QtWidgets import QGraphicsView, QGraphicsScene
+    from PyQt5.QtWidgets import QGraphicsView, QGraphicsScene, QMenu
     from PyQt5.QtGui import QColor, QPainter, QBrush, QPen
     from PyQt5.QtCore import Qt, QPointF, pyqtSignal
     _PY6 = False
@@ -33,7 +33,9 @@ from viperforge.registry import ExploitDef
 from viperforge.session import Session
 from .block_item import BlockItem
 from .connector import ConnectorItem
-from .theme import BG_DEEP, BORDER_DARK, ACCENT_RED
+from .theme import BG_DEEP, BORDER_DARK, ACCENT_RED, TEXT_PRIMARY
+
+import qtawesome as qta
 
 # Grid settings
 GRID_SIZE    = 30
@@ -47,10 +49,12 @@ class ExploitCanvas(QGraphicsView):
     Signals:
         block_selected(BlockItem) — a block was selected
         canvas_changed()          — any change
+        macro_requested(list)     — selected blocks for macro creation
     """
 
-    block_selected = pyqtSignal(object)    # BlockItem | None
-    canvas_changed = pyqtSignal()
+    block_selected  = pyqtSignal(object)    # BlockItem | None
+    canvas_changed  = pyqtSignal()
+    macro_requested = pyqtSignal(list)      # list[BlockItem]
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -77,7 +81,8 @@ class ExploitCanvas(QGraphicsView):
         # State
         self._blocks:     list[BlockItem]    = []
         self._connectors: list[ConnectorItem]= []
-        self._pending_src: BlockItem | None  = None   # waiting for chain connection?
+        self._pending_src: BlockItem | None  = None
+        self._pending_port: str = "success"  # port type for pending connection
 
         # Canvas size
         self._scene.setSceneRect(-2000, -2000, 6000, 6000)
@@ -104,8 +109,11 @@ class ExploitCanvas(QGraphicsView):
         # Connect signals
         block.signals.clicked.connect(self._on_block_clicked)
         block.signals.moved.connect(self._on_block_moved)
-        block.signals.connect_req.connect(self._on_connect_req)
+        block.signals.connect_success_req.connect(self._on_connect_success_req)
+        block.signals.connect_failure_req.connect(self._on_connect_failure_req)
         block.signals.delete_req.connect(self._on_block_delete_req)
+        block.signals.failure_pin_toggled.connect(self._on_failure_pin_toggled)
+        block.signals.macro_requested.connect(self.macro_requested.emit)
 
         self.canvas_changed.emit()
         return block
@@ -117,6 +125,7 @@ class ExploitCanvas(QGraphicsView):
         self._blocks.clear()
         self._connectors.clear()
         self._pending_src = None
+        self._pending_port = "success"
         self.canvas_changed.emit()
 
     # ── Save/Load Workspace ───────────────────────────────────────────────
@@ -133,7 +142,8 @@ class ExploitCanvas(QGraphicsView):
                 "exploit_id": b.exploit_def.id,
                 "x": b.x(),
                 "y": b.y(),
-                "options": opts
+                "options": opts,
+                "failure_enabled": b.failure_enabled,
             })
             
         conns_data = []
@@ -141,7 +151,8 @@ class ExploitCanvas(QGraphicsView):
             if c.src in block_ids and c.dst in block_ids:
                 conns_data.append({
                     "src": block_ids[c.src],
-                    "dst": block_ids[c.dst]
+                    "dst": block_ids[c.dst],
+                    "port_type": c.port_type,
                 })
                 
         return {"blocks": blocks_data, "connections": conns_data}
@@ -166,54 +177,70 @@ class ExploitCanvas(QGraphicsView):
             
             block = BlockItem(exp, sess)
             block.setPos(b_data.get("x", 0), b_data.get("y", 0))
+            # Restore failure_enabled state
+            if b_data.get("failure_enabled", False):
+                block._failure_enabled = True
             self._scene.addItem(block)
             self._blocks.append(block)
             created_blocks.append(block)
             
             block.signals.clicked.connect(self._on_block_clicked)
             block.signals.moved.connect(self._on_block_moved)
-            block.signals.connect_req.connect(self._on_connect_req)
+            block.signals.connect_success_req.connect(self._on_connect_success_req)
+            block.signals.connect_failure_req.connect(self._on_connect_failure_req)
             block.signals.delete_req.connect(self._on_block_delete_req)
+            block.signals.failure_pin_toggled.connect(self._on_failure_pin_toggled)
+            block.signals.macro_requested.connect(self.macro_requested.emit)
             
             block_map[b_data.get("uuid")] = block
             
         for c_data in data.get("connections", []):
             src = block_map.get(c_data.get("src"))
             dst = block_map.get(c_data.get("dst"))
+            port_type = c_data.get("port_type", "success")
             if src and dst:
-                self._add_connector(src, dst)
+                self._add_connector(src, dst, port_type)
         
         self.canvas_changed.emit()
         return created_blocks
 
     # ── Connection management ─────────────────────────────────────────────────────
-    def _on_connect_req(self, block: BlockItem) -> None:
+    def _on_connect_success_req(self, block: BlockItem) -> None:
+        self._handle_connect_req(block, "success")
+
+    def _on_connect_failure_req(self, block: BlockItem) -> None:
+        self._handle_connect_req(block, "failure")
+
+    def _handle_connect_req(self, block: BlockItem, port_type: str) -> None:
         """Connector click: detach if exists, else start connection."""
-        # If there's an outgoing connection, detach it
-        existing_conns = [c for c in self._connectors if c.src is block]
+        # If there's an outgoing connection of this port_type, detach it
+        existing_conns = [c for c in self._connectors
+                         if c.src is block and c.port_type == port_type]
         if existing_conns:
             for c in existing_conns:
                 self._scene.removeItem(c)
                 self._connectors.remove(c)
-            block.set_connected(False)
+            block.set_connected(False, port_type)
             self.canvas_changed.emit()
             return
 
         if self._pending_src is None:
             self._pending_src = block
-            block.set_connected(True)
+            self._pending_port = port_type
+            block.set_connected(True, port_type)
         else:
             if self._pending_src is not block:
-                self._add_connector(self._pending_src, block)
+                self._add_connector(self._pending_src, block, self._pending_port)
             else:
-                self._pending_src.set_connected(False)
+                self._pending_src.set_connected(False, self._pending_port)
             self._pending_src = None
+            self._pending_port = "success"
 
-    def _add_connector(self, src: BlockItem, dst: BlockItem) -> None:
-        conn = ConnectorItem(src, dst)
+    def _add_connector(self, src: BlockItem, dst: BlockItem, port_type: str = "success") -> None:
+        conn = ConnectorItem(src, dst, port_type)
         self._scene.addItem(conn)
         self._connectors.append(conn)
-        src.set_connected(True)
+        src.set_connected(True, port_type)
         self.canvas_changed.emit()
 
     def _update_connectors(self) -> None:
@@ -223,8 +250,9 @@ class ExploitCanvas(QGraphicsView):
     # ── Block signals ─────────────────────────────────────────────────────────
     def _on_block_clicked(self, block: BlockItem) -> None:
         if self._pending_src is not None and self._pending_src is not block:
-            self._add_connector(self._pending_src, block)
+            self._add_connector(self._pending_src, block, self._pending_port)
             self._pending_src = None
+            self._pending_port = "success"
         else:
             self.block_selected.emit(block)
 
@@ -237,7 +265,18 @@ class ExploitCanvas(QGraphicsView):
         self._update_connectors()
         self.canvas_changed.emit()
 
-    # ── Calculate chain order ────────────────────────────────────────────────
+    def _on_failure_pin_toggled(self, block: BlockItem) -> None:
+        """When failure pin is disabled, remove all failure connectors from this block."""
+        if not block.failure_enabled:
+            conns_to_remove = [c for c in self._connectors
+                               if c.src is block and c.port_type == "failure"]
+            for c in conns_to_remove:
+                self._scene.removeItem(c)
+                self._connectors.remove(c)
+            block.set_connected(False, "failure")
+        self.canvas_changed.emit()
+
+    # ── Calculate chain order (DAG) ──────────────────────────────────────────
     def get_chain_order(self) -> list[BlockItem]:
         """
         Returns topological order based on connector graph.
@@ -246,23 +285,54 @@ class ExploitCanvas(QGraphicsView):
         if not self._connectors:
             return list(self._blocks)
 
-        # Order connected blocks
-        adj: dict[BlockItem, BlockItem] = {c.src: c.dst for c in self._connectors}
+        # Build adjacency: src -> [(dst, port_type), ...]
+        adj: dict[BlockItem, list[tuple[BlockItem, str]]] = {}
+        for c in self._connectors:
+            adj.setdefault(c.src, []).append((c.dst, c.port_type))
+
         starts = [b for b in self._blocks if not any(c.dst is b for c in self._connectors)]
 
         ordered: list[BlockItem] = []
+        visited: set[int] = set()
+
+        def _walk(node):
+            nid = id(node)
+            if nid in visited:
+                return
+            visited.add(nid)
+            ordered.append(node)
+            for (child, _pt) in adj.get(node, []):
+                _walk(child)
+
         for start in starts:
-            cur = start
-            while cur is not None:
-                ordered.append(cur)
-                cur = adj.get(cur)
+            _walk(start)
 
         # Add unconnected blocks
         for b in self._blocks:
-            if b not in ordered:
+            if id(b) not in visited:
                 ordered.append(b)
 
         return ordered
+
+    def get_graph(self) -> dict:
+        """
+        Returns full DAG info for engine:
+        {
+            block_id: {
+                "block": BlockItem,
+                "success": [BlockItem, ...],
+                "failure": [BlockItem, ...],
+            }
+        }
+        """
+        graph = {}
+        for b in self._blocks:
+            graph[id(b)] = {"block": b, "success": [], "failure": []}
+        for c in self._connectors:
+            sid = id(c.src)
+            if sid in graph:
+                graph[sid][c.port_type].append(c.dst)
+        return graph
 
     # ── Deletion Process ─────────────────────────────────────────────────────────
     def keyPressEvent(self, event):
@@ -284,8 +354,8 @@ class ExploitCanvas(QGraphicsView):
                 self._scene.removeItem(c)
                 self._connectors.remove(c)
                 # Update src connected status
-                if not any(oc.src is c.src for oc in self._connectors):
-                    c.src.set_connected(False)
+                if not any(oc.src is c.src and oc.port_type == c.port_type for oc in self._connectors):
+                    c.src.set_connected(False, c.port_type)
 
         # Delete selected blocks
         for block in selected_blocks:
@@ -297,8 +367,8 @@ class ExploitCanvas(QGraphicsView):
                 
                 # Update status of the other block if it was the source
                 if c.src is not block:
-                    if not any(oc.src is c.src for oc in self._connectors):
-                        c.src.set_connected(False)
+                    if not any(oc.src is c.src and oc.port_type == c.port_type for oc in self._connectors):
+                        c.src.set_connected(False, c.port_type)
             
             self._scene.removeItem(block)
             self._blocks.remove(block)
@@ -306,6 +376,31 @@ class ExploitCanvas(QGraphicsView):
                 self._pending_src = None
                 
         self.canvas_changed.emit()
+
+    # ── Context menu (canvas-level) ──────────────────────────────────────────
+    def contextMenuEvent(self, event):
+        # Only show canvas context menu if no item is under cursor
+        item = self.itemAt(event.pos())
+        if item is not None:
+            super().contextMenuEvent(event)
+            return
+
+        selected_blocks = [it for it in self._scene.selectedItems() if isinstance(it, BlockItem)]
+        if len(selected_blocks) >= 2:
+            menu = QMenu(self)
+            menu.setStyleSheet(f"""
+                QMenu {{ background: #1a1a2e; color: {TEXT_PRIMARY}; border: 1px solid {BORDER_DARK}; }}
+                QMenu::item:selected {{ background: #ffd60a; color: black; }}
+            """)
+            action_macro = menu.addAction(
+                qta.icon('fa5s.layer-group', color='#ffd60a'),
+                f"Create Macro ({len(selected_blocks)} blocks)"
+            )
+            selected = menu.exec(self.mapToGlobal(event.pos()))
+            if selected == action_macro:
+                self.macro_requested.emit(selected_blocks)
+        else:
+            super().contextMenuEvent(event)
 
     # ── Panning & Zoom ───────────────────────────────────────────────────────
     def mousePressEvent(self, event):

@@ -33,7 +33,7 @@ def print_banner() -> None:
     console.print(f"[bold red]{BANNER}[/bold red]")
     console.print(
         "                           [dim]Red Team Exploit Factory[/dim] "
-        "[bold red]v2.0.0-beta[/bold red]\n"
+        "[bold red]v2.1.0-beta[/bold red]\n"
     )
 
 
