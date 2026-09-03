@@ -23,6 +23,7 @@ _PORT_COLORS = {
     "failure": "#e63946",
 }
 _SELECTED_COLOR = "#ffaa00"
+_SELECTED_WIDTH = 4   # widest pen paint() ever uses (selected state)
 
 
 class ConnectorItem(QGraphicsPathItem):
@@ -55,11 +56,22 @@ class ConnectorItem(QGraphicsPathItem):
 
     def paint(self, painter, option, widget=None):
         if self.isSelected():
-            pen = QPen(QColor(_SELECTED_COLOR), 4, Qt.PenStyle.SolidLine if _PY6 else Qt.SolidLine)
+            pen = QPen(QColor(_SELECTED_COLOR), _SELECTED_WIDTH, Qt.PenStyle.SolidLine if _PY6 else Qt.SolidLine)
             painter.setPen(pen)
         else:
             painter.setPen(self.pen())
         painter.drawPath(self.path())
+
+    def boundingRect(self):
+        # paint() draws a wider (4px) pen when selected than self.pen() (2px).
+        # The default QGraphicsPathItem.boundingRect() is derived from
+        # self.pen(), so it under-reports the area actually painted while
+        # selected — Qt then fails to fully invalidate/redraw that area,
+        # leaving stray fragments of the highlighted curve on screen after
+        # panning/zooming or deselecting. Pad for the widest pen paint()
+        # can ever use so the reported bounds always cover it.
+        half = _SELECTED_WIDTH / 2.0 + 2
+        return self.path().boundingRect().adjusted(-half, -half, half, half)
 
     def shape(self):
         # Create a wider shape for easier clicking

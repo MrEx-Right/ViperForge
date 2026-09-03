@@ -2,7 +2,7 @@
 <img src="docs/images/viperforge.png" alt="ViperForge Logo" width="220"/>
 
 # ViperForge
-### Red Team Exploit Factory &nbsp;·&nbsp; `2.0.0-beta`
+### Red Team Exploit Factory &nbsp;·&nbsp; `2.1.0-beta`
 </div>
 
 <div align="center">
@@ -11,7 +11,7 @@
 ![PyQt6](https://img.shields.io/badge/GUI-PyQt6-41CD52?style=for-the-badge&logo=qt&logoColor=white)
 ![License](https://img.shields.io/badge/License-GPLv3-blue?style=for-the-badge)
 ![Status](https://img.shields.io/badge/Status-Beta-e63946?style=for-the-badge)
-![Version](https://img.shields.io/badge/Version-2.0.0--beta-ff6680?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-2.1.0--beta-ff6680?style=for-the-badge)
 
 **Visual, block-based Red Team exploit factory. Build multi-stage exploit chains by dragging blocks — no boilerplate, no guesswork.**
 
@@ -30,7 +30,7 @@
 
 ## Interface
 
-![ViperForge v2.0 GUI](docs/images/ui.png)
+![ViperForge v2.1 GUI](docs/images/ui.png)
 
 > *Three-pane layout: **Exploit Block Palette** (left) · **Canvas** (center) · **Parameters + Live Preview** (right).*  
 > *Drag blocks onto the canvas, chain them with the ▼ connector, fill in parameters — hit **GENERATE EXPLOIT**.*
@@ -39,12 +39,14 @@
 
 ## Overview
 
-ViperForge v2.0 is a node-based exploit builder. Each exploit module is a **block** you place on a canvas. Connect blocks with arrow connectors to define the attack flow. ViperForge generates a single, clean Python exploit script from the entire chain — with deduped imports, a shared `CTX` context dictionary, and an optional XOR-encoded shellcode payload.
+ViperForge v2.1 is a node-based exploit builder. Each exploit module is a **block** you place on a canvas. Connect blocks with arrow connectors to define the attack flow — including **Success/Failure branch pins** for conditional logic — and optionally group blocks into reusable **macros**. ViperForge generates a single, clean Python exploit script from the entire chain — with deduped imports, a shared `CTX` context dictionary, and an optional XOR-encoded shellcode payload.
 
 ### Why ViperForge?
 
 - **Visual chain building** — See your attack flow as a graph. No more copy-pasting boilerplate between scripts.
-- **0-Day Builder micro-blocks** — Compose primitive operations (socket, send/recv, encode, XOR, HTTP, file I/O…) into custom exploit flows from scratch.
+- **0-Day Builder micro-blocks** — Compose primitive operations (socket, send/recv, encode, XOR, HTTP, file I/O, conditionals, loops…) into custom exploit flows from scratch.
+- **Dual-pin branching** — Give any block a Success/Failure pin pair and ViperForge generates the matching `try/except` or `if/else` logic automatically.
+- **Macros** — Group any selection of blocks into a named, reusable macro block; drop it into other chains and it expands inline at generation time.
 - **Evasion-first payloads** — C shellcode is compiled with GCC, XOR-encoded with a random key, and embedded as a self-decoding Python `ctypes`/`mmap` stub. No two outputs are identical.
 - **Chain validator** — Detects broken chains (missing sockets, undefined variables, empty fields) before generation.
 - **Dual interface** — Full GUI for visual building; Rich-powered CLI for headless/terminal-only workflows.
@@ -57,12 +59,15 @@ ViperForge v2.0 is a node-based exploit builder. Each exploit module is a **bloc
 |---|---|
 | 🧩 **Visual Block Builder** | Drag-and-drop exploit blocks on an infinite canvas |
 | 🔗 **Chain Mode** | Connect blocks to generate multi-stage exploit scripts |
+| 🔀 **Dual-Pin Branching** | Success/Failure pins per block → generated `try/except` / `if/else` logic |
+| 🧠 **Logic & Loop Blocks** | `if_else`, `loop`, `try_catch`, `variable_set` micro-blocks for real control flow |
+| 📦 **Macro Blocks** | Group blocks into a named, reusable composite block; expands inline at generation |
 | ⚡ **Live Code Preview** | Python syntax-highlighted output updates in real time |
 | 🛡️ **Chain Validator** | Pre-generation static analysis — catches errors before generation |
 | 💾 **Workspace Save / Load** | Save your block canvas to JSON and reload it later |
 | 🔐 **Polymorphic XOR Encoder** | Random key · `ctypes`/`mmap` self-decoding shellcode stub |
 | ⚙️ **C Payload Compiler** | Auto-compiles `.c` sources → raw shellcode via `gcc` + `objcopy` |
-| 🌐 **36 Exploit Modules** | 18 classic exploits + 18 Builder micro-blocks |
+| 🌐 **40 Exploit Modules** | 18 classic exploits + 22 Builder micro-blocks |
 | 🖥️ **CLI Mode** | Full `--cli` shell with Rich formatting and Chain Builder mode |
 
 ---
@@ -93,6 +98,10 @@ Compose custom exploit flows from primitive operations. Designed to be chained t
 | `builder_print` | Print a message or variable to console |
 | `builder_sleep` | Pause execution for N seconds |
 | `builder_custom` | Inject arbitrary Python code |
+| `builder_if_else` | Conditional branch based on a CTX variable |
+| `builder_loop` | Iterate over a wordlist, numeric range, or file lines |
+| `builder_try_catch` | Wrap the following blocks in `try/except` with fallback logic |
+| `builder_variable_set` | Set a CTX variable — static value, regex extraction, or `eval` |
 
 ### 💥 Binary Exploitation
 
@@ -183,6 +192,38 @@ python viperforge.py
 python viperforge.py --cli
 ```
 
+### Windows Standalone `.exe` (optional)
+
+A `.spec` file is included to build a windowed, single-file Windows executable with PyInstaller:
+
+```bash
+pip install pyinstaller
+pyinstaller ViperForge.spec
+# → dist/ViperForge.exe
+```
+
+This launches straight into the GUI with no console window. `--cli` mode isn't included in this build (it needs an attached terminal) — run it from source instead.
+
+> ⚠️ **Windows Defender / antivirus will very likely flag this `.exe`.** This is a known false positive, not a sign of tampering — see [Antivirus Warnings](#antivirus--windows-defender-warnings) below before reporting it as broken.
+
+---
+
+## Antivirus / Windows Defender Warnings
+
+**This is expected, and it does not mean the code has been tampered with.**
+
+If you build or download a standalone `.exe` of ViperForge, Windows Defender (or another AV) will very likely flag it. Two independent, well-understood reasons:
+
+1. **The tool itself is a shellcode encoder.** ViperForge compiles raw C shellcode and embeds it as an XOR-encoded, self-decoding `ctypes`/`mmap` payload stub — exactly the code shape AV heuristics are built to catch. Tools in this category (Metasploit, `msfvenom`, mimikatz, Impacket) get flagged for the same reason, signed or not.
+2. **The `.exe` is built with PyInstaller and is unsigned.** Packed, unsigned Python binaries are a common malware-delivery shape, so SmartScreen/Defender apply extra scrutiny regardless of what's actually inside — this project does not currently ship a paid code-signing certificate.
+
+**What to do about it:**
+
+- **Prefer running from source** — `pip install -r requirements.txt && python viperforge.py`. Defender scans a running/packed binary far more aggressively than a plain `.py` file, and you can read every line before executing it.
+- If you do use a prebuilt `.exe`, add a Defender exclusion for that file (or its folder) rather than disabling AV protection system-wide.
+- Don't trust a binary you can't verify — build it yourself with `pyinstaller ViperForge.spec` (see above) so what you run matches exactly what's in this repo.
+- As always: only run this tool against systems you're explicitly authorized to test — see the Disclaimer at the top of this document.
+
 ---
 
 ## Usage
@@ -214,8 +255,10 @@ python viperforge.py
 |---|---|
 | Scroll wheel | Zoom in / out |
 | Middle mouse drag | Pan canvas |
+| Left mouse drag on empty canvas | Rubber-band select multiple blocks |
 | `Delete` / `Backspace` | Delete selected blocks or connectors |
-| Right-click a block | Edit · Replace with another module · Delete |
+| Right-click a block | Edit · Replace with another module · Add/Remove Failure Pin · Delete |
+| Right-click with 2+ blocks selected | Create Macro from the selected blocks |
 
 ### CLI Mode
 
@@ -243,6 +286,25 @@ Before generating, ViperForge runs a static analysis pass on the block chain:
 | Builder blocks and classic exploit blocks mixed in the same chain | ⚠️ Warning |
 
 Errors block generation. Warnings are shown but do not prevent script output.
+
+---
+
+## Branching & Macros
+
+### Dual-Pin Branching
+
+Right-click any block and choose **Add Failure Pin (Branch)** to split its bottom connector into two pins:
+
+- **Success (green, `OK`)** — the normal chain path.
+- **Failure (red, `ERR`)** — taken if the block raises/fails.
+
+Connect each pin to a different downstream block to define what happens on success vs. failure. At generation time ViperForge turns the branch into real Python control flow (`try/except` for builder chains, `if/else` for classic chains) — no manual wiring required.
+
+### Macros
+
+Select two or more blocks on the canvas (rubber-band drag, or `Ctrl`/`Shift`-click), right-click, and choose **Create Macro**. Give it a name and description — the selected blocks *and* the connections between them are saved as a single reusable unit under `workspaces/macros/`.
+
+Saved macros show up as a **Macros** category in the block palette and in the toolbar's **Macros** dropdown. Dropping a macro onto the canvas adds one gold-accented composite block; at generation time it's expanded inline into its constituent blocks, in their original order and wiring.
 
 ---
 
@@ -288,7 +350,7 @@ r = socket.create_connection(("{{ RHOST }}", {{ RPORT }}))
 
 ```python
 ExploitDef(
-    id=37, name="my_exploit", category="Binary Exploitation",
+    id=41, name="my_exploit", category="Binary Exploitation",
     description="My Custom Exploit",
     template="my_exploit",
     options=[
@@ -314,6 +376,8 @@ viperforge.py  ─────────────────────�
   └─ Chain Builder Mode                  │ block_palette.py    ││
                                          │ canvas.py           ││
                                          │ block_item.py       ││
+                                         │ macro_block_item.py ││
+                                         │ macro_dialog.py     ││
                                          │ connector.py        ││
                                          │ param_panel.py      ││
                                          │ preview_panel.py    ││
@@ -321,7 +385,8 @@ viperforge.py  ─────────────────────�
                                                   │               │
                         ──────────────────────────┘               │
                         ▼                                          │
-              viperforge/engine.py   (Jinja2 rendering + chain assembly)
+              viperforge/engine.py   (Jinja2 rendering + chain assembly,
+                                       Success/Failure branching, macro expansion)
                         │
            ┌────────────┴────────────┐
            ▼                         ▼
@@ -330,8 +395,9 @@ viperforge.py  ─────────────────────�
            │
            ▼
   viperforge/validator.py   (pre-generation chain analysis)
-  viperforge/registry.py    (36 ExploitDef entries)
+  viperforge/registry.py    (40 ExploitDef entries)
   viperforge/session.py     (per-block option storage)
+  viperforge/macro.py       (macro definitions, save/load, expansion)
 ```
 
 ---

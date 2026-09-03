@@ -131,21 +131,30 @@ class ExploitCanvas(QGraphicsView):
     # ── Save/Load Workspace ───────────────────────────────────────────────
     def to_dict(self) -> dict:
         import uuid
+        from .macro_block_item import MacroBlockItem
+
         block_ids = {}
         blocks_data = []
         for b in self._blocks:
             bid = str(uuid.uuid4())
             block_ids[b] = bid
             opts = dict(b.session.options)
-            blocks_data.append({
+            entry = {
                 "uuid": bid,
                 "exploit_id": b.exploit_def.id,
                 "x": b.x(),
                 "y": b.y(),
                 "options": opts,
                 "failure_enabled": b.failure_enabled,
-            })
-            
+            }
+            if isinstance(b, MacroBlockItem):
+                # Macro blocks share exploit_id == -1, so the macro's own
+                # definition must be embedded to identify + reconstruct it
+                # (a bare id lookup can't tell which macro this was).
+                entry["is_macro"] = True
+                entry["macro_def"] = b.macro_def.to_dict()
+            blocks_data.append(entry)
+
         conns_data = []
         for c in self._connectors:
             if c.src in block_ids and c.dst in block_ids:
@@ -161,21 +170,38 @@ class ExploitCanvas(QGraphicsView):
         self.clear_canvas()
         from viperforge.registry import get_exploit_by_id
         from viperforge.session import Session
-        
+        from viperforge.macro import MacroDef
+        from .macro_block_item import MacroBlockItem
+
         block_map = {}
         created_blocks = []
+        skipped = 0
         for b_data in data.get("blocks", []):
-            eid = b_data.get("exploit_id")
-            exp = get_exploit_by_id(eid)
-            if not exp:
-                continue
-            sess = Session()
-            sess.set_exploit(exp)
-            opts = b_data.get("options", {})
-            for k, v in opts.items():
-                sess.set_option(k, v)
-            
-            block = BlockItem(exp, sess)
+            if b_data.get("is_macro"):
+                macro_data = b_data.get("macro_def")
+                if not macro_data:
+                    skipped += 1
+                    continue
+                macro_def = MacroDef.from_dict(macro_data)
+                sess = Session()
+                block = MacroBlockItem(macro_def, sess)
+                opts = b_data.get("options", {})
+                for k, v in opts.items():
+                    sess.set_option(k, v)
+            else:
+                eid = b_data.get("exploit_id")
+                exp = get_exploit_by_id(eid)
+                if not exp:
+                    skipped += 1
+                    continue
+                sess = Session()
+                sess.set_exploit(exp)
+                opts = b_data.get("options", {})
+                for k, v in opts.items():
+                    sess.set_option(k, v)
+
+                block = BlockItem(exp, sess)
+
             block.setPos(b_data.get("x", 0), b_data.get("y", 0))
             # Restore failure_enabled state
             if b_data.get("failure_enabled", False):
@@ -183,7 +209,7 @@ class ExploitCanvas(QGraphicsView):
             self._scene.addItem(block)
             self._blocks.append(block)
             created_blocks.append(block)
-            
+
             block.signals.clicked.connect(self._on_block_clicked)
             block.signals.moved.connect(self._on_block_moved)
             block.signals.connect_success_req.connect(self._on_connect_success_req)
@@ -191,9 +217,11 @@ class ExploitCanvas(QGraphicsView):
             block.signals.delete_req.connect(self._on_block_delete_req)
             block.signals.failure_pin_toggled.connect(self._on_failure_pin_toggled)
             block.signals.macro_requested.connect(self.macro_requested.emit)
-            
+
             block_map[b_data.get("uuid")] = block
-            
+
+        self._load_skipped_count = skipped
+
         for c_data in data.get("connections", []):
             src = block_map.get(c_data.get("src"))
             dst = block_map.get(c_data.get("dst"))

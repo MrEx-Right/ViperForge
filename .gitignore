@@ -3,3 +3,5 @@ viperforge_history.tmp
 __pycache__/
 update.txt
 workspaces/
+build/
+dist/

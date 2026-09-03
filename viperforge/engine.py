@@ -59,6 +59,12 @@ def _is_builder(session: Session) -> bool:
                 session.active_exploit.name.startswith("builder_"))
 
 
+def _is_macro(session: Session) -> bool:
+    """Returns True if the session's active exploit is a macro (composite) block."""
+    return bool(session.active_exploit and
+                getattr(session.active_exploit, '_macro_def', None) is not None)
+
+
 def _render_template(session: Session, env: Environment) -> str:
     """Render a single session template and return the code string."""
     if not session.active_exploit or not session.active_exploit.template:
@@ -75,17 +81,15 @@ def _expand_macros(sessions: List[Session]) -> List[Session]:
     """Expand any macro sessions into their constituent sub-sessions."""
     expanded = []
     for s in sessions:
-        if (s.active_exploit and
-            hasattr(s.active_exploit, '_macro_def') and
-            s.active_exploit._macro_def is not None):
+        if _is_macro(s):
             # Import here to avoid circular deps
             from .macro import macro_to_sessions
             inner = macro_to_sessions(s.active_exploit._macro_def)
             expanded.extend(inner)
-        elif (s.active_exploit and s.active_exploit.id == -1 and
-              not s.active_exploit.template):
-            # MacroBlockItem stores macro_def on the block, but session
-            # won't have it. Skip empty macro sessions.
+        elif s.active_exploit is None or s.active_exploit.id == -1:
+            # Defensive: an unset or otherwise-untagged macro placeholder
+            # session — nothing usable to expand, drop it rather than
+            # crash the render on a template-less block.
             continue
         else:
             expanded.append(s)
@@ -98,6 +102,15 @@ def generate_single(session: Session, out_path: Optional[str] = None) -> str:
     """Single mode: generates one exploit from one session."""
     if not session.active_exploit:
         raise RuntimeError("No active exploit in session.")
+
+    if _is_macro(session):
+        from .macro import macro_to_sessions
+        inner = macro_to_sessions(session.active_exploit._macro_def)
+        if not inner:
+            raise RuntimeError(
+                f"Macro '{session.active_exploit.name}' has no valid inner blocks to generate."
+            )
+        return generate_chain(inner, out_path)
 
     _resolve_shellcode(session)
 
@@ -295,6 +308,13 @@ def preview_single(session: Session) -> str:
     """For GUI live preview: returns rendered string without writing to file."""
     if not session.active_exploit:
         return "# No exploit selected."
+
+    if _is_macro(session):
+        from .macro import macro_to_sessions
+        inner = macro_to_sessions(session.active_exploit._macro_def)
+        if not inner:
+            return f"# Macro '{session.active_exploit.name}' has no valid inner blocks."
+        return preview_chain(inner)
 
     env = _get_jinja_env()
     tmpl_name = f"{session.active_exploit.template}.j2"

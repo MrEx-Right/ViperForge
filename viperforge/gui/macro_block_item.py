@@ -56,7 +56,16 @@ class MacroBlockItem(BlockItem):
             template="",  # no template — expanded at generation time
             options=[],
         )
+        # Tag the virtual def so the engine can recognize and expand this
+        # session as a macro (see engine._is_macro / _expand_macros).
+        virtual_def._macro_def = macro_def
+
         super().__init__(virtual_def, session, parent)
+
+        # Wire the session to the virtual exploit def so downstream code
+        # (validation, generation, preview) sees a valid active_exploit
+        # instead of an empty/unset Session.
+        self.session.set_exploit(virtual_def)
 
         self.macro_def = macro_def
         self.accent = _MACRO_ACCENT
@@ -151,3 +160,59 @@ class MacroBlockItem(BlockItem):
         """Double-click opens macro info (could be expanded to full editor)."""
         self.signals.clicked.emit(self)
         super().mouseDoubleClickEvent(event)
+
+    def contextMenuEvent(self, event):
+        """
+        Macro-specific context menu. Deliberately omits "Replace with..."
+        (inherited from BlockItem) since swapping self.exploit_def for a
+        real ExploitDef would desync it from self.macro_def, leaving the
+        block rendered as a macro but generating as something else.
+        """
+        menu = QMenu()
+        menu.setStyleSheet(f"""
+            QMenu {{ background: #1a1a2e; color: {TEXT_PRIMARY}; border: 1px solid {BORDER_DARK}; }}
+            QMenu::item:selected {{ background: {ACCENT_GOLD}; color: black; }}
+        """)
+
+        selected_blocks = [item for item in self.scene().selectedItems() if isinstance(item, BlockItem)]
+        action_macro = None
+
+        if len(selected_blocks) >= 2:
+            action_macro = menu.addAction(
+                qta.icon('fa5s.layer-group', color=ACCENT_GOLD),
+                f"Create Macro ({len(selected_blocks)} blocks)"
+            )
+            menu.addSeparator()
+
+        action_edit = menu.addAction(qta.icon('fa5s.edit', color='white'), "Edit")
+
+        menu.addSeparator()
+
+        if self._failure_enabled:
+            action_fp = menu.addAction(
+                qta.icon('fa5s.times-circle', color=PIN_FAILURE_COLOR),
+                "Remove Failure Pin"
+            )
+        else:
+            action_fp = menu.addAction(
+                qta.icon('fa5s.code-branch', color=PIN_SUCCESS_COLOR),
+                "Add Failure Pin (Branch)"
+            )
+
+        menu.addSeparator()
+
+        action_delete = menu.addAction(qta.icon('fa5s.trash-alt', color='#ff4455'), "Delete")
+
+        selected = menu.exec(event.screenPos())
+        if selected == action_edit:
+            self.signals.clicked.emit(self)
+        elif selected == action_fp:
+            self._failure_enabled = not self._failure_enabled
+            self.prepareGeometryChange()
+            self.update()
+            self.signals.failure_pin_toggled.emit(self)
+            self.signals.moved.emit(self)
+        elif selected == action_delete:
+            self.signals.delete_req.emit(self)
+        elif action_macro and selected == action_macro:
+            self.signals.macro_requested.emit(selected_blocks)

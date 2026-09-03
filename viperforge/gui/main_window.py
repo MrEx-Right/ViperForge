@@ -410,6 +410,11 @@ class MainWindow(QMainWindow):
     # ─── Event handlers ──────────────────────────────────────────────────────
     def _on_exploit_selected(self, exploit_def: ExploitDef) -> None:
         """Double click from palette -> add to canvas."""
+        macro_def = getattr(exploit_def, '_macro_def', None)
+        if macro_def is not None:
+            self._add_macro_to_canvas(macro_def)
+            return
+
         session = Session()
         session.set_exploit(exploit_def)
 
@@ -555,8 +560,19 @@ class MainWindow(QMainWindow):
             created_blocks = self.canvas.from_dict(data)
             for b in created_blocks:
                 self._block_sessions[b] = b.session
-                
-            self._set_status(f"[OK] Workspace loaded from {path}")
+
+            skipped = getattr(self.canvas, '_load_skipped_count', 0)
+            if skipped:
+                self._set_status(
+                    f"[WARN] Workspace loaded from {path} — {skipped} block(s) could not be restored."
+                )
+                QMessageBox.warning(
+                    self, "Workspace Partially Loaded",
+                    f"{skipped} block(s) referenced an exploit or macro that no longer "
+                    f"exists and were skipped. The remaining blocks loaded normally."
+                )
+            else:
+                self._set_status(f"[OK] Workspace loaded from {path}")
         except Exception as e:
             QMessageBox.critical(self, "Error Loading Workspace", f"Failed to load workspace:\n{str(e)}")
 

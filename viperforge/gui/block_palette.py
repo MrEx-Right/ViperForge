@@ -265,6 +265,7 @@ class BlockPalette(QWidget):
             self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self._build_ui()
         self._populate()
+        self.refresh_macros()   # load any macros saved in a previous session
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
