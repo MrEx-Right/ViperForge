@@ -15,6 +15,10 @@
 
 **Visual, block-based Red Team exploit factory. Build multi-stage exploit chains by dragging blocks — no boilerplate, no guesswork.**
 
+### [⬇️ Download ViperForge v2.1.0-beta for Windows (.exe)](https://github.com/MrEx-Right/ViperForge/releases/download/v2.1.0-beta/ViperForge.exe)
+
+*Windows Defender will very likely flag this file on download/first run — this is an expected false positive, not tampering. See [Antivirus / Windows Defender Warnings](#antivirus--windows-defender-warnings) before running it.*
+
 </div>
 
 ---
@@ -194,7 +198,9 @@ python viperforge.py --cli
 
 ### Windows Standalone `.exe` (optional)
 
-A `.spec` file is included to build a windowed, single-file Windows executable with PyInstaller:
+**Prebuilt:** [Download ViperForge.exe — v2.1.0-beta](https://github.com/MrEx-Right/ViperForge/releases/download/v2.1.0-beta/ViperForge.exe)
+
+Or build it yourself — a `.spec` file is included to produce a windowed, single-file Windows executable with PyInstaller:
 
 ```bash
 pip install pyinstaller
