@@ -1,5 +1,5 @@
 """
-ViperForge v2.0 — Parameter Panel (Right Panel - Top)
+ViperForge — Parameter Panel (Right Panel - Top)
 Displays parameters of the selected block as a dynamic form.
 """
 

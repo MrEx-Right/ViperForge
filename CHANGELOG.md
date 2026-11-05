@@ -6,6 +6,44 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.1.0] — 2026-11-01
+
+> 🐍 **First stable release.** The feature set of `2.1.0-beta` is now considered stable. This release finishes the branching and classic-chain generation that the beta shipped incomplete, and adds tests, CI and release hardening.
+
+### Added
+- `viperforge.__version__` — single source of truth for the version, used by the CLI banner, GUI toolbar badge, Qt application metadata and `--help`.
+- `--version` flag on `viperforge.py`.
+- `ViperForge.spec` — the PyInstaller spec referenced in the README is now part of the repository (windowed single-file build, bundles templates, payload sources, assets and qtawesome fonts).
+- Test suite (`tests/`, pytest): registry integrity, rendering + syntax check of all 40 module templates, builder / classic / hybrid chain generation, macro expansion and persistence, every chain-validator rule, toolchain errors, XOR encoder, and a headless GUI smoke test (workspace save/load round-trip incl. branch pins).
+- GitHub Actions workflow running the suite on Ubuntu and Windows, Python 3.10 – 3.13.
+- `requirements-dev.txt` and pytest configuration in `pyproject.toml`.
+- Chain validator: connections that form a loop are now reported as an error.
+- Chain validator: warns when a `builder_loop` / `builder_try_catch` has nothing on its Success pin, and treats the loop's `ITERATOR_VAR` as a produced CTX variable.
+
+### Removed
+- Legacy Go `text/template` files (`templates/exploits/*.tmpl`). They have not been used since the 2.0 Python rewrite; the `.j2` templates are the only active ones.
+- Committed build/output artifacts: `output/chain_exploit.py` and `templates/payloads/win_exec.o`. Both are now git-ignored (`output/`, `*.o`).
+
+### Changed
+- `output/` and `workspaces/` are now anchored to the ViperForge folder (or next to `ViperForge.exe`) instead of the current working directory, so launching from another folder no longer scatters files around (`viperforge/paths.py`).
+- Compiling a C payload without `gcc` / `objcopy` on `PATH` now fails with an actionable message instead of a bare `FileNotFoundError`.
+- Removed hardcoded version numbers from module docstrings so they can no longer drift out of sync.
+
+### Fixed
+- **Success/Failure branching is now applied during generation.** Pins and their connections were saved, but the engine never read them — both paths were flattened into one sequence and always ran. A block with a connected Failure pin now runs inside `try/except`; it fails if it raises or sets `CTX["_vf_branch"] = "failure"` (as `builder_if_else` does), and its two paths are generated as an `if/else` that rejoins where the paths meet (`viperforge/graph.py`).
+- **Classic chains now actually run their modules.** Each `stage_N_*()` function only defined the template's helper functions — the template's `if __name__ == "__main__":` block, where the exploit is invoked, was dropped — so executing a classic chain did nothing.
+- Mixed builder + classic chains kept no order (all builder blocks first, then all classic stages); they now run in canvas order.
+- Macros now expand following their inner connections (previously only the saved block order), including branches inside the macro and a Failure pin on the macro block itself.
+- The validator reported a false "no socket" error for send/recv blocks placed after a macro that creates the socket; macro contents are now validated inline.
+- Indenting code into stage functions / branches no longer changes the contents of multi-line string literals (e.g. the XXE payload).
+- **`builder_loop` and `builder_try_catch` now wrap the blocks on their Success pin.** Their templates only contained a `# chain subsequent blocks here` placeholder: the loop iterated without running anything and later blocks ran once afterwards, while try/catch protected an empty `pass`. The Success-pin path is now the loop body / protected code and the Failure pin handles an empty loop source or an error that survived retry/skip/log. Containers nest, work inside macros, and support `CTX["_vf_loop_break"]` to stop a loop early.
+- `builder_loop` in `FILE` mode no longer produces a syntax error for Windows paths (`C:\Users\...`).
+
+### Security
+- The chain validator no longer `eval()`s the `VALUE` field of `builder_pack` / `builder_p32_p64`. A crafted workspace or macro file could previously execute arbitrary code on the user's machine just by being loaded and validated. Values are now checked as literal/arithmetic expressions without evaluating names or calls.
+
+---
+
 ## [2.1.0-beta] — 2026-09-03
 
 ### Added

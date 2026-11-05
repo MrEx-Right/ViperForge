@@ -1,5 +1,5 @@
 """
-ViperForge v2.0 — Block Item (QGraphicsItem)
+ViperForge — Block Item (QGraphicsItem)
 Draggable exploit block on the canvas.
 """
 

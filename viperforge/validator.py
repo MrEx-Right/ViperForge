@@ -1,11 +1,14 @@
 """
-ViperForge v2.0 — Chain Validator
+ViperForge — Chain Validator
 Analyzes the block chain and returns a list of warning/error messages
 before code generation. Prevents invalid combinations from silently
 producing broken exploits.
 """
 
-from typing import List, Tuple
+import ast
+from typing import List, Optional, Tuple
+
+from .graph import SUCCESS, Edge, find_cycle, outgoing
 
 # Builder blocks that NEED a socket in CTX before them
 _SOCKET_CONSUMERS = {
@@ -46,12 +49,45 @@ _CTX_WRITERS = {
     "builder_pack":         "VAR_NAME",
     "builder_p32_p64":      "OUTPUT_VAR",
     "builder_variable_set": "VAR_NAME",
+    "builder_loop":         "ITERATOR_VAR",
+}
+
+# Container blocks: the blocks on their Success pin are the loop body / protected code
+_CONTAINER_BODY = {
+    "builder_loop":      "loop body",
+    "builder_try_catch": "protected code",
 }
 
 # Severity levels
 ERROR   = "error"
 WARNING = "warning"
 INFO    = "info"
+
+
+# Node types allowed in a VALUE expression: literals combined with arithmetic /
+# bitwise operators (e.g. "0xdeadbeef", "0x41414141 + 8", "1 << 16").
+# Anything else (names, calls, attribute access) is rejected without evaluation,
+# so a crafted workspace/macro file can't execute code during validation.
+_VALUE_NODES = (
+    ast.Expression, ast.Constant, ast.BinOp, ast.UnaryOp,
+    ast.Add, ast.Sub, ast.Mult, ast.FloorDiv, ast.Mod,
+    ast.LShift, ast.RShift, ast.BitOr, ast.BitAnd, ast.BitXor,
+    ast.USub, ast.UAdd, ast.Invert,
+)
+
+
+def _is_literal_expr(text: str) -> bool:
+    try:
+        tree = ast.parse(text.strip(), mode="eval")
+    except SyntaxError:
+        return False
+    if not all(isinstance(n, _VALUE_NODES) for n in ast.walk(tree)):
+        return False
+    try:
+        eval(compile(tree, "<VALUE>", "eval"), {"__builtins__": {}}, {})
+    except Exception:
+        return False
+    return True
 
 
 def _get_opt(session, key: str, default: str = "") -> str:
@@ -70,17 +106,62 @@ class ValidationIssue:
         return f"{icon}  [{self.block_name}]  {self.message}"
 
 
-def validate_chain(blocks, sessions) -> List[ValidationIssue]:
+def _expand_macro_sessions(sessions) -> list:
+    """Macro blocks are validated through the blocks they contain."""
+    from .macro import macro_to_sessions   # imported here to avoid circular deps
+    expanded = []
+    for s in sessions:
+        macro_def = getattr(s.active_exploit, "_macro_def", None) if s.active_exploit else None
+        if macro_def is not None:
+            expanded.extend(macro_to_sessions(macro_def))
+        else:
+            expanded.append(s)
+    return expanded
+
+
+def validate_chain(blocks, sessions, edges: Optional[List[Edge]] = None) -> List[ValidationIssue]:
     """
-    Validate a chain of (BlockItem, Session) pairs.
+    Validate a chain of (BlockItem, Session) pairs in chain order.
+    `edges` are the connections as (src_index, dst_index, port_type) over `sessions`.
     Returns a list of ValidationIssue objects.
     """
     issues: List[ValidationIssue] = []
-
-    # Build ordered list of (name, session) tuples
-    ordered = list(zip(blocks, sessions))
-    if not ordered:
+    if not sessions:
         return []
+
+    # ── Connections must not loop back — generated code runs top to bottom ──
+    cycle = find_cycle(len(sessions), edges or [])
+    if cycle:
+        names = " → ".join(
+            sessions[i].active_exploit.name if sessions[i].active_exploit else f"Block #{i+1}"
+            for i in cycle
+        )
+        issues.append(ValidationIssue(
+            ERROR, "Chain",
+            f"Connections form a loop ({names}). Remove one connection — "
+            f"use a 'builder_loop' block for repetition."
+        ))
+
+    # ── Containers need something on their Success pin to wrap ──────────
+    # Without a graph, the session list is one linear chain.
+    graph_edges = edges if edges is not None else [
+        (i, i + 1, SUCCESS) for i in range(len(sessions) - 1)
+    ]
+    succ, _fail = outgoing(len(sessions), graph_edges)
+    for idx, session in enumerate(sessions):
+        name = session.active_exploit.name if session.active_exploit else ""
+        if name in _CONTAINER_BODY and succ[idx] is None:
+            issues.append(ValidationIssue(
+                WARNING, name,
+                f"Nothing is connected to the Success pin, so the {_CONTAINER_BODY[name]} "
+                f"is empty. Connect the blocks it should wrap to its Success pin."
+            ))
+
+    # Build ordered list of (block, session) tuples, macros expanded
+    sessions = _expand_macro_sessions(sessions)
+    ordered = list(zip([None] * len(sessions), sessions))
+    if not ordered:
+        return issues
 
     # Track what's been written to CTX so far
     ctx_vars: dict[str, str] = {}          # var_name -> "written by block_name"
@@ -99,8 +180,9 @@ def validate_chain(blocks, sessions) -> List[ValidationIssue]:
     if has_builder and has_classic:
         issues.append(ValidationIssue(
             WARNING, "Chain",
-            "Mixing '0-Day Builder' blocks with classic exploit blocks in the same "
-            "chain may produce unexpected results. Consider using only one type."
+            "Mixing '0-Day Builder' blocks with classic exploit blocks: builder blocks run "
+            "inline and classic blocks as separate stage functions, so they only share "
+            "data through CTX, not through local variables."
         ))
 
     for idx, (block, session) in enumerate(ordered):
@@ -155,9 +237,7 @@ def validate_chain(blocks, sessions) -> List[ValidationIssue]:
         # ── builder_pack / builder_p32_p64: check VALUE is parseable ─────
         if name in ("builder_pack", "builder_p32_p64"):
             val_str = _get_opt(session, "VALUE", "0")
-            try:
-                eval(val_str)   # safe for hex literals and simple integers
-            except Exception:
+            if not _is_literal_expr(val_str):
                 issues.append(ValidationIssue(
                     ERROR, name,
                     f"VALUE '{val_str}' cannot be parsed as a Python integer/hex. "

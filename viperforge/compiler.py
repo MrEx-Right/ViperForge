@@ -1,15 +1,26 @@
 """
-ViperForge v2.0 — C Payload Compiler
+ViperForge — C Payload Compiler
 Python equivalent of Go's compiler.go.
 Compiles .c source into raw shellcode using GCC.
 """
 
 import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
 PAYLOADS_DIR = Path(__file__).parent.parent / "templates" / "payloads"
+
+
+def _require_tool(tool: str) -> None:
+    """Fail with an actionable message instead of a bare FileNotFoundError."""
+    if shutil.which(tool) is None:
+        raise RuntimeError(
+            f"'{tool}' was not found on PATH. Compiling C payloads requires GCC and "
+            f"binutils with 32-bit support (Linux: sudo apt install gcc binutils gcc-multilib). "
+            f"Leave PAYLOAD empty to generate the exploit without a compiled payload."
+        )
 
 
 def compile_payload(payload_name: str) -> str:
@@ -20,6 +31,9 @@ def compile_payload(payload_name: str) -> str:
     src_path = PAYLOADS_DIR / f"{payload_name}.c"
     if not src_path.exists():
         raise RuntimeError(f"Payload source not found: {src_path}")
+
+    _require_tool("gcc")
+    _require_tool("objcopy")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         obj_path  = os.path.join(tmpdir, f"{payload_name}.o")

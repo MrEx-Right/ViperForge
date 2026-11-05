@@ -1,7 +1,29 @@
-viperforge.exe
-viperforge_history.tmp
-__pycache__/
+# Local notes and user data
 update.txt
+viperforge_history.tmp
 workspaces/
+
+# Generated exploit scripts and compiled payload objects
+output/
+*.o
+
+# Build artifacts (PyInstaller)
 build/
 dist/
+viperforge.exe
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

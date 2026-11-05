@@ -1,5 +1,5 @@
 """
-ViperForge v2.0 -- Block Palette (Left Sidebar)
+ViperForge -- Block Palette (Left Sidebar)
 Clean QScrollArea based palette. No QTreeWidget + setItemWidget hacks.
 Proper hover via enterEvent / leaveEvent on QFrame subclasses.
 """

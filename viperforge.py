@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ViperForge v2.0 — Entry Point
+ViperForge — Entry Point
   python viperforge.py          → GUI (default)
   python viperforge.py --cli    → CLI wizard
 """
@@ -9,11 +9,13 @@ import sys
 import argparse
 import os
 
+from viperforge import __version__
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="viperforge",
-        description="ViperForge v2.0 — Block-Based Exploit Builder",
+        description=f"ViperForge v{__version__} — Block-Based Exploit Builder",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -25,6 +27,11 @@ Examples:
         "--cli",
         action="store_true",
         help="Launch the interactive CLI wizard instead of the GUI",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"ViperForge {__version__}",
     )
     args = parser.parse_args()
 
@@ -48,7 +55,7 @@ Examples:
 
         app = QApplication(sys.argv)
         app.setApplicationName("ViperForge")
-        app.setApplicationVersion("2.0")
+        app.setApplicationVersion(__version__)
         app.setOrganizationName("Red Team Tools")
 
         # Font

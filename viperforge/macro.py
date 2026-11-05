@@ -1,5 +1,5 @@
 """
-ViperForge v2.1 — Macro System
+ViperForge — Macro System
 Manages composite macro blocks (sub-graphs) that encapsulate
 multiple blocks into reusable units.
 """
@@ -8,13 +8,12 @@ import json
 import uuid
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 
 from .session import Session
 from .registry import get_exploit_by_id
-
-
-MACROS_DIR = Path("workspaces") / "macros"
+from .graph import Edge, SUCCESS, chain_order, remap_edges
+from .paths import MACROS_DIR
 
 
 @dataclass
@@ -95,12 +94,14 @@ def delete_macro(macro_id: str, macros_dir: Optional[str] = None) -> bool:
     return False
 
 
-def macro_to_sessions(macro: MacroDef) -> List[Session]:
+def macro_to_graph(macro: MacroDef) -> Tuple[List[Session], List[Edge]]:
     """
-    Convert a macro's block list into ordered Session objects.
-    This expands the macro for code generation.
+    Convert a macro into Session objects plus the connections between them
+    (as index edges), ordered by the macro's own wiring. Blocks whose module
+    no longer exists are dropped along with their connections.
     """
-    sessions = []
+    sessions: List[Session] = []
+    index_by_uuid: Dict[str, int] = {}
     for b_data in macro.blocks:
         eid = b_data.get("exploit_id")
         exp = get_exploit_by_id(eid)
@@ -110,8 +111,29 @@ def macro_to_sessions(macro: MacroDef) -> List[Session]:
         sess.set_exploit(exp)
         for k, v in b_data.get("options", {}).items():
             sess.set_option(k, v)
+        if b_data.get("uuid"):
+            index_by_uuid[b_data["uuid"]] = len(sessions)
         sessions.append(sess)
-    return sessions
+
+    edges: List[Edge] = []
+    for c in macro.connections:
+        src, dst = index_by_uuid.get(c.get("src")), index_by_uuid.get(c.get("dst"))
+        if src is not None and dst is not None:
+            edges.append((src, dst, c.get("port_type", SUCCESS)))
+
+    order = chain_order(len(sessions), edges)
+    new_index: List[Optional[int]] = [None] * len(sessions)
+    for new, old in enumerate(order):
+        new_index[old] = new
+    return [sessions[i] for i in order], remap_edges(edges, new_index)
+
+
+def macro_to_sessions(macro: MacroDef) -> List[Session]:
+    """
+    Convert a macro's blocks into Session objects in wiring order.
+    This expands the macro for code generation.
+    """
+    return macro_to_graph(macro)[0]
 
 
 def create_macro_from_blocks(name: str, description: str,

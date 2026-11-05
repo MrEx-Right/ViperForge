@@ -1,5 +1,5 @@
 """
-ViperForge v2.1 — Canvas (QGraphicsView + Scene)
+ViperForge — Canvas (QGraphicsView + Scene)
 Drag-and-drop block editor with Success/Failure branching.
 """
 
@@ -341,6 +341,15 @@ class ExploitCanvas(QGraphicsView):
                 ordered.append(b)
 
         return ordered
+
+    def get_edges(self, blocks: list[BlockItem]) -> list[tuple[int, int, str]]:
+        """Connections as (src_index, dst_index, port_type) over `blocks`, for the engine."""
+        index = {id(b): i for i, b in enumerate(blocks)}
+        return [
+            (index[id(c.src)], index[id(c.dst)], c.port_type)
+            for c in self._connectors
+            if id(c.src) in index and id(c.dst) in index
+        ]
 
     def get_graph(self) -> dict:
         """

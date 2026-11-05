@@ -1,5 +1,5 @@
 """
-ViperForge v2.0 — Exploit Registry
+ViperForge — Exploit Registry
 Definitions of all exploit modules are here.
 """
 
@@ -249,7 +249,7 @@ REGISTRY: List[ExploitDef] = [
     ),
     ExploitDef(
         id=38, name="builder_loop", category="Exploit Builder (0-Day)",
-        description="Iterate over wordlist, range, or file lines",
+        description="Run Success-pin blocks per wordlist, range, or file line",
         template="builder_loop",
         options=[
             ExploitOption("MODE",         "Loop mode (LIST, RANGE, FILE)",    "LIST"),
@@ -262,7 +262,7 @@ REGISTRY: List[ExploitDef] = [
     ),
     ExploitDef(
         id=39, name="builder_try_catch", category="Exploit Builder (0-Day)",
-        description="Wrap next blocks in try/except for error handling",
+        description="Wrap Success-pin blocks in try/except (retry, skip, log)",
         template="builder_try_catch",
         options=[
             ExploitOption("ERROR_TYPES",    "Exception types to catch (Timeout, ConnectionReset, All)", "All"),

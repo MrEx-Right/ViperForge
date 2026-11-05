@@ -1,0 +1,8 @@
+# Tooling configuration only. ViperForge runs from a source checkout
+# (python viperforge.py) — templates/ and assets/ live next to the package,
+# so it is not published as an installable distribution.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "tests"]
+addopts = "-ra"

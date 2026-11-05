@@ -1,5 +1,5 @@
 """
-ViperForge v2.1 — Macro Dialog
+ViperForge — Macro Dialog
 QDialog for creating / editing macro blocks.
 """
 

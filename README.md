@@ -1,17 +1,14 @@
 <div align="center">
-<img src="docs/images/viperforge.png" alt="ViperForge Logo" width="220"/>
 
-# ViperForge
-### Red Team Exploit Factory &nbsp;·&nbsp; `2.1.0-beta`
-</div>
+<img src="docs/images/banner.png" alt="ViperForge — Red Team Exploit Factory" width="100%"/>
 
-<div align="center">
+<br/>
 
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![PyQt6](https://img.shields.io/badge/GUI-PyQt6-41CD52?style=for-the-badge&logo=qt&logoColor=white)
 ![License](https://img.shields.io/badge/License-GPLv3-blue?style=for-the-badge)
-![Status](https://img.shields.io/badge/Status-Beta-e63946?style=for-the-badge)
-![Version](https://img.shields.io/badge/Version-2.1.0--beta-ff6680?style=for-the-badge)
+![Status](https://img.shields.io/badge/Status-Stable-2a9d8f?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-2.1.0-ff6680?style=for-the-badge)
 
 **Visual, block-based Red Team exploit factory. Build multi-stage exploit chains by dragging blocks — no boilerplate, no guesswork.**
 
@@ -59,7 +56,7 @@ ViperForge v2.1 is a node-based exploit builder. Each exploit module is a **bloc
 |---|---|
 | 🧩 **Visual Block Builder** | Drag-and-drop exploit blocks on an infinite canvas |
 | 🔗 **Chain Mode** | Connect blocks to generate multi-stage exploit scripts |
-| 🔀 **Dual-Pin Branching** | Success/Failure pins per block → generated `try/except` / `if/else` logic |
+| 🔀 **Dual-Pin Branching** | Success/Failure pins per block → generated `try/except` + `if/else` control flow |
 | 🧠 **Logic & Loop Blocks** | `if_else`, `loop`, `try_catch`, `variable_set` micro-blocks for real control flow |
 | 📦 **Macro Blocks** | Group blocks into a named, reusable composite block; expands inline at generation |
 | ⚡ **Live Code Preview** | Python syntax-highlighted output updates in real time |
@@ -99,8 +96,8 @@ Compose custom exploit flows from primitive operations. Designed to be chained t
 | `builder_sleep` | Pause execution for N seconds |
 | `builder_custom` | Inject arbitrary Python code |
 | `builder_if_else` | Conditional branch based on a CTX variable |
-| `builder_loop` | Iterate over a wordlist, numeric range, or file lines |
-| `builder_try_catch` | Wrap the following blocks in `try/except` with fallback logic |
+| `builder_loop` | Run the blocks on its Success pin once per item of a wordlist, numeric range, or file lines |
+| `builder_try_catch` | Protect the blocks on its Success pin with `try/except` — retry, skip or log; the Failure pin handles the error |
 | `builder_variable_set` | Set a CTX variable — static value, regex extraction, or `eval` |
 
 ### 💥 Binary Exploitation
@@ -284,6 +281,8 @@ Before generating, ViperForge runs a static analysis pass on the block chain:
 | `builder_http_req` URL does not start with `http://` or `https://` | ⚠️ Warning |
 | `builder_read_file` / `builder_write_file` FILE_PATH is empty | ❌ Error |
 | Builder blocks and classic exploit blocks mixed in the same chain | ⚠️ Warning |
+| Connections form a loop (A → B → A) | ❌ Error |
+| `builder_loop` / `builder_try_catch` has nothing on its Success pin (empty body) | ⚠️ Warning |
 
 Errors block generation. Warnings are shown but do not prevent script output.
 
@@ -298,25 +297,59 @@ Right-click any block and choose **Add Failure Pin (Branch)** to split its botto
 - **Success (green, `OK`)** — the normal chain path.
 - **Failure (red, `ERR`)** — taken if the block raises/fails.
 
-Connect each pin to a different downstream block to define what happens on success vs. failure. At generation time ViperForge turns the branch into real Python control flow (`try/except` for builder chains, `if/else` for classic chains) — no manual wiring required.
+Connect each pin to a different downstream block to define what happens on success vs. failure. At generation time ViperForge turns the branch into real Python control flow — no manual wiring required:
+
+```python
+CTX["_vf_branch"] = "success"
+try:
+    ...                                   # the branching block
+except Exception as _vf_err:
+    CTX["_vf_branch"] = "failure"
+if CTX.get("_vf_branch") == "failure":
+    ...                                   # blocks on the Failure path
+else:
+    ...                                   # blocks on the Success path
+...                                       # where both paths meet again
+```
+
+- A block **fails** if it raises an exception or sets `CTX["_vf_branch"] = "failure"` — `builder_if_else` does this when its condition is false, so an `if_else` block with both pins connected is a real conditional.
+- Both paths rejoin at the first block they both lead to; branches can be nested.
+- Classic modules handle most errors internally (they print and continue), so their Failure path only runs on an uncaught exception.
+- Connections must not form a loop — use `builder_loop` for repetition.
+
+Chains with branches — and chains that mix builder and classic blocks — are generated as one `main()` flow in canvas order: builder blocks inline, classic modules as `stage_N_name()` functions. Linear chains without a Failure pin produce the same flat / staged scripts as before.
+
+### Loop & Try/Catch Containers
+
+`builder_loop` and `builder_try_catch` wrap other blocks. Whatever is connected to their **Success** pin is the body:
+
+| Block | Success pin | Failure pin |
+|---|---|---|
+| `builder_loop` | Runs once per item (`CTX["<ITERATOR_VAR>"]` holds the current item) | Runs if the source can't be loaded (e.g. missing file) or is empty |
+| `builder_try_catch` | Protected code — on a matching `ERROR_TYPES` error it is retried (`RETRY`), skipped (`SKIP`) or logged (`LOG`) | Runs if the protected code still failed; the error text is in `CTX["_vf_last_error"]` |
+
+- The body extends along the Success path until it meets the Failure path — the block where both meet runs **after** the loop / try. To continue after a loop, connect its Failure pin to that same block.
+- Without a Failure connection, the body is the rest of the chain.
+- Set `CTX["_vf_loop_break"]` (e.g. with `builder_variable_set`) inside a loop body to stop the loop early.
+- Containers can be nested and used inside macros.
 
 ### Macros
 
 Select two or more blocks on the canvas (rubber-band drag, or `Ctrl`/`Shift`-click), right-click, and choose **Create Macro**. Give it a name and description — the selected blocks *and* the connections between them are saved as a single reusable unit under `workspaces/macros/`.
 
-Saved macros show up as a **Macros** category in the block palette and in the toolbar's **Macros** dropdown. Dropping a macro onto the canvas adds one gold-accented composite block; at generation time it's expanded inline into its constituent blocks, in their original order and wiring.
+Saved macros show up as a **Macros** category in the block palette and in the toolbar's **Macros** dropdown. Dropping a macro onto the canvas adds one gold-accented composite block; at generation time it's expanded inline into its constituent blocks, in their original order and wiring — including any branches inside the macro. A Failure pin on the macro block itself catches a failure anywhere inside the macro.
 
 ---
 
 ## Generated Output
 
-Scripts are saved to the `output/` directory. Chain scripts include:
+Scripts are saved to the `output/` directory, and workspaces/macros to `workspaces/`. Both live in the ViperForge folder itself (next to `viperforge.py`, or next to `ViperForge.exe` for the standalone build) — not in whatever directory you launched from. Chain scripts include:
 
 - `#!/usr/bin/env python3` shebang
 - Auto-generated header with the block/module list
 - **Builder chains** — flat sequential code with deduped imports and a shared `CTX = {}` dict
 - **Classic chains** — each module wrapped in `stage_N_name()` functions, called by `main()`
-- **Hybrid chains** — builder blocks as flat code, classic modules as staged functions
+- **Hybrid & branching chains** — one `main()` flow in canvas order: builder blocks inline, classic modules as staged functions, Success/Failure pins as `try/except` + `if/else`
 
 ---
 
@@ -362,6 +395,13 @@ ExploitDef(
 
 ViperForge automatically discovers the new module — it appears in both the GUI palette and the CLI menus immediately.
 
+**3. Run the tests** — every registered module is rendered and syntax-checked automatically, so a broken template fails fast:
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
 ---
 
 ## Architecture
@@ -387,6 +427,7 @@ viperforge.py  ─────────────────────�
                         ▼                                          │
               viperforge/engine.py   (Jinja2 rendering + chain assembly,
                                        Success/Failure branching, macro expansion)
+              viperforge/graph.py    (chain graph: order, loops, branch join points)
                         │
            ┌────────────┴────────────┐
            ▼                         ▼
@@ -398,7 +439,19 @@ viperforge.py  ─────────────────────�
   viperforge/registry.py    (40 ExploitDef entries)
   viperforge/session.py     (per-block option storage)
   viperforge/macro.py       (macro definitions, save/load, expansion)
+  viperforge/paths.py       (output/ and workspaces/ locations)
 ```
+
+---
+
+## Development
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
+The suite covers the registry, every module template, builder/classic/hybrid chain generation, macro expansion, the chain validator and a headless GUI smoke test (`QT_QPA_PLATFORM=offscreen`). GitHub Actions runs it on Linux and Windows for Python 3.10 – 3.13 on every push and pull request.
 
 ---
 

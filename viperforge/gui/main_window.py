@@ -1,5 +1,5 @@
 """
-ViperForge v2.1 — Main Window
+ViperForge — Main Window
 Main PyQt6 window: palette + canvas + right panel.
 Macro system and dual-pin branching support.
 """
@@ -57,6 +57,8 @@ def _mb_yes():
 def _mb_icon_info():
     return QMessageBox.Icon.Information if _PY6 else QMessageBox.Information
 
+from viperforge import __version__
+from viperforge.paths import OUTPUT_DIR, WORKSPACES_DIR
 from viperforge.registry import ExploitDef
 from viperforge.session import Session
 from viperforge.engine import generate_single, generate_chain, preview_single, preview_chain
@@ -92,16 +94,18 @@ class GenerateWorker(QObject):
     finished = pyqtSignal(str)   # out_path
     error    = pyqtSignal(str)   # error message
 
-    def __init__(self, sessions: list[Session], chain: bool, out_path: str | None = None):
+    def __init__(self, sessions: list[Session], chain: bool, out_path: str | None = None,
+                 edges: list[tuple[int, int, str]] | None = None):
         super().__init__()
         self.sessions  = sessions
         self.chain     = chain
         self.out_path  = out_path
+        self.edges     = edges
 
     def run(self):
         try:
             if self.chain and len(self.sessions) > 1:
-                path = generate_chain(self.sessions, self.out_path)
+                path = generate_chain(self.sessions, self.out_path, self.edges)
             else:
                 path = generate_single(self.sessions[0], self.out_path)
             self.finished.emit(path)
@@ -214,7 +218,7 @@ class MainWindow(QMainWindow):
             " <b style='color:#e63946; font-size:15px;'>ViperForge</b>"
             "  <span style='background:#3d0010; color:#ff6680; border:1px solid #e6394688;"
             " border-radius:3px; padding:1px 6px; font-size:9px; font-weight:bold;"
-            " letter-spacing:1px;'>2.1.0-beta</span>"
+            f" letter-spacing:1px;'>v{__version__}</span>"
             "  <span style='color:#666680; font-size:10px;'>Block Exploit Builder</span>"
         )
         logo.setTextFormat(_text_format_rich())
@@ -402,10 +406,10 @@ class MainWindow(QMainWindow):
 
     # ─── Helpers ─────────────────────────────────────────────────────────────
     def _get_ordered_sessions(self):
-        """Returns (blocks, sessions) in chain order."""
-        blocks = self.canvas.get_chain_order()
-        sessions = [self._block_sessions[b] for b in blocks if b in self._block_sessions]
-        return blocks, sessions
+        """Returns (blocks, sessions, edges) in chain order; edges index into sessions."""
+        blocks = [b for b in self.canvas.get_chain_order() if b in self._block_sessions]
+        sessions = [self._block_sessions[b] for b in blocks]
+        return blocks, sessions, self.canvas.get_edges(blocks)
 
     # ─── Event handlers ──────────────────────────────────────────────────────
     def _on_exploit_selected(self, exploit_def: ExploitDef) -> None:
@@ -440,14 +444,14 @@ class MainWindow(QMainWindow):
         if self._selected_block:
             session = self._block_sessions.get(self._selected_block)
             if session:
-                blocks, sessions = self._get_ordered_sessions()
+                blocks, sessions, edges = self._get_ordered_sessions()
                 if len(sessions) > 1:
-                    self.preview_panel.set_chain_code(preview_chain(sessions))
+                    self.preview_panel.set_chain_code(preview_chain(sessions, edges))
                 else:
                     self._update_preview(session)
                 self._selected_block.refresh()
                 # Re-run validation
-                issues = validate_chain(blocks, sessions)
+                issues = validate_chain(blocks, sessions, edges)
                 self._show_validation(issues)
 
     def _update_preview(self, session: Session) -> None:
@@ -486,13 +490,13 @@ class MainWindow(QMainWindow):
             return
 
         # Run validation and show banner
-        blocks, sessions = self._get_ordered_sessions()
+        blocks, sessions, edges = self._get_ordered_sessions()
         if sessions:
-            issues = validate_chain(blocks, sessions)
+            issues = validate_chain(blocks, sessions, edges)
             self._show_validation(issues)
             # Update chain preview when connections change
             if len(sessions) > 1:
-                self.preview_panel.set_chain_code(preview_chain(sessions))
+                self.preview_panel.set_chain_code(preview_chain(sessions, edges))
             elif len(sessions) == 1 and self._selected_block:
                 sess = self._block_sessions.get(self._selected_block)
                 if sess:
@@ -522,8 +526,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Empty Canvas", "There are no blocks to save.")
             return
 
-        out_dir = Path("workspaces")
-        out_dir.mkdir(exist_ok=True)
+        out_dir = WORKSPACES_DIR
+        out_dir.mkdir(parents=True, exist_ok=True)
         
         path, _ = QFileDialog.getSaveFileName(
             self, "Save Workspace", str(out_dir / "chain.json"), "JSON Files (*.json);;All Files (*)"
@@ -542,7 +546,7 @@ class MainWindow(QMainWindow):
 
     def _on_load_workspace(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Load Workspace", "workspaces", "JSON Files (*.json);;All Files (*)"
+            self, "Load Workspace", str(WORKSPACES_DIR), "JSON Files (*.json);;All Files (*)"
         )
         if not path:
             return
@@ -577,13 +581,13 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error Loading Workspace", f"Failed to load workspace:\n{str(e)}")
 
     def _on_generate(self) -> None:
-        blocks, sessions = self._get_ordered_sessions()
+        blocks, sessions, edges = self._get_ordered_sessions()
         if not sessions:
             QMessageBox.warning(self, "No Blocks", "Add at least one exploit block to the canvas.")
             return
 
         # Run validation first — block on errors
-        issues = validate_chain(blocks, sessions)
+        issues = validate_chain(blocks, sessions, edges)
         errors = [i for i in issues if i.severity == V_ERROR]
         if errors:
             err_text = "\n".join(str(i) for i in errors)
@@ -599,8 +603,8 @@ class MainWindow(QMainWindow):
             f"chain_exploit.py" if len(sessions) > 1
             else f"{sessions[0].active_exploit.name}_exploit.py"
         )
-        out_dir = Path("output")
-        out_dir.mkdir(exist_ok=True)
+        out_dir = OUTPUT_DIR
+        out_dir.mkdir(parents=True, exist_ok=True)
 
         out_path, _ = QFileDialog.getSaveFileName(
             self,
@@ -613,7 +617,8 @@ class MainWindow(QMainWindow):
 
         # Worker thread
         self._worker_thread = QThread()
-        self._worker = GenerateWorker(sessions, chain=len(sessions) > 1, out_path=out_path)
+        self._worker = GenerateWorker(sessions, chain=len(sessions) > 1, out_path=out_path,
+                                      edges=edges)
         self._worker.moveToThread(self._worker_thread)
         self._worker_thread.started.connect(self._worker.run)
         self._worker.finished.connect(self._on_generate_done)

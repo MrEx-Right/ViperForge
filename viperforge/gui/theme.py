@@ -1,5 +1,5 @@
 """
-ViperForge v2.0 — Qt Style Sheet Theme
+ViperForge — Qt Style Sheet Theme
 Cyberpunk dark neon theme constants and QSS styles.
 """
 

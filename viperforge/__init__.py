@@ -1,1 +1,3 @@
-"""ViperForge v2.0"""
+"""ViperForge — Red Team Exploit Factory"""
+
+__version__ = "2.1.0"

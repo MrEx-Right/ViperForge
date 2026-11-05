@@ -1,5 +1,5 @@
 """
-ViperForge v2.0 — Session State
+ViperForge — Session State
 Holds the active exploit and parameter values.
 """
 

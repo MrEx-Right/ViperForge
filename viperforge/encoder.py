@@ -1,5 +1,5 @@
 """
-ViperForge v2.0 — XOR Encoder
+ViperForge — XOR Encoder
 Python equivalent of Go's encoder.go.
 Polymorphic XOR encoder + JMP-CALL-POP decoder stub.
 """

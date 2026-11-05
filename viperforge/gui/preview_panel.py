@@ -1,5 +1,5 @@
 """
-ViperForge v2.0 — Preview Panel (Right Panel - Bottom)
+ViperForge — Preview Panel (Right Panel - Bottom)
 Chain-aware live Python exploit code preview.
 """
 

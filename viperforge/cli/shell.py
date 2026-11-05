@@ -1,5 +1,5 @@
 """
-ViperForge v2.0 — CLI Shell (--cli mode)
+ViperForge — CLI Shell (--cli mode)
 Python port of Go's shell.go, using the Rich library.
 """
 
@@ -13,6 +13,7 @@ from rich.prompt import Prompt
 from rich.text import Text
 from rich import box
 
+from viperforge import __version__
 from viperforge.registry import REGISTRY, all_categories, get_by_category, CATEGORY_ICONS, CATEGORY_COLORS
 from viperforge.session import Session
 from viperforge.engine import generate_single
@@ -33,7 +34,7 @@ def print_banner() -> None:
     console.print(f"[bold red]{BANNER}[/bold red]")
     console.print(
         "                           [dim]Red Team Exploit Factory[/dim] "
-        "[bold red]v2.1.0-beta[/bold red]\n"
+        f"[bold red]v{__version__}[/bold red]\n"
     )
 
 

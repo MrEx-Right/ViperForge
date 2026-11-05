@@ -1,5 +1,5 @@
 """
-ViperForge v2.1 — Connector (SVG Bezier line)
+ViperForge — Connector (SVG Bezier line)
 Draws the chain connection between two blocks.
 Supports port_type: "success" (green) or "failure" (red).
 """

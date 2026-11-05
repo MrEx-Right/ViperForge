@@ -1,5 +1,5 @@
 """
-ViperForge v2.0 — Qt Compat Layer
+ViperForge — Qt Compat Layer
 Falls back to PyQt5 if PyQt6 is not available.
 """
 

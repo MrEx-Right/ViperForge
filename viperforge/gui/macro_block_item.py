@@ -1,5 +1,5 @@
 """
-ViperForge v2.1 — Macro Block Item
+ViperForge — Macro Block Item
 Special QGraphicsItem for macro blocks on the canvas.
 Displays a gold-themed composite block with inner block count badge.
 """
